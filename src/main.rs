@@ -14,6 +14,7 @@ enum ParseError {
 enum Expr {
     Int(i32),
     Cons(Box<Expr>, Box<Expr>),
+    Nil,
 }
 
 impl Expr {
@@ -53,12 +54,13 @@ fn skip_ws(s: &str) -> &str {
     many(s, |c| c == ' ').1
 }
 
-fn consume<'a>(s: &'a str, pat: &str) -> Option<&'a str> {
-    s.strip_prefix(pat)
+fn consume<'a>(s: &'a str, pat: &str) -> Result<&'a str, ParseError> {
+    s.strip_prefix(pat).ok_or(ParseError::Unexpected)
 }
 
 fn parse_expr(s: &str) -> Result<(Expr, &str), ParseError> {
-    parse_num(s).or_else(|_| parse_cons(s))
+    parse_num(s)
+        .or_else(|_| parse_list(s))
 }
 
 fn parse_num(s: &str) -> ParseResult {
@@ -70,22 +72,31 @@ fn parse_num(s: &str) -> ParseResult {
     }
 }
 
-fn parse_cons(s: &str) -> ParseResult {
-    let s = consume(s, "(").ok_or(ParseError::Unexpected)?;
+fn parse_list(s: &str) -> ParseResult {
+    let s = consume(s, "(")?;
     let s = skip_ws(s);
 
-    let (e1, s) = parse_expr(s)?;
-    let s = skip_ws(s);
+    let mut items = Vec::new();
+    let mut s = s;
+    while let Ok((e, s1)) = parse_expr(s) {
+        items.push(e);
+        s = skip_ws(s1);
+    }
 
-    let s = consume(s, ".").ok_or(ParseError::Unexpected)?;
-    let s = skip_ws(s);
+    let (tail, s) =
+        if let Ok(s) = consume(s, ".") {
+            let s = skip_ws(s);
+            let (e, s) = parse_expr(s)?;
+            let s = skip_ws(s);
+            (e, s)
+        } else {
+            (Expr::Nil, s)
+        };
 
-    let (e2, s) = parse_expr(s)?;
-    let s = skip_ws(s);
+    let s = consume(s, ")")?;
+    let e = items.into_iter().rev().fold(tail, |a, x| Expr::cons(x, a));
 
-    let s = consume(s, ")").ok_or(ParseError::Unexpected)?;
-
-    Ok((Expr::cons(e1, e2), s))
+    Ok((e, s))
 }
 
 #[cfg(test)]
@@ -120,5 +131,20 @@ mod test {
 
         let e = "(  3 . 4  )".parse();
         assert_eq!(e, Ok(Expr::cons(Expr::int(3), Expr::int(4))));
+    }
+    
+    #[test]
+    fn test_list() {
+        let e = "()".parse();
+        assert_eq!(e, Ok(Expr::Nil));
+
+        let e = "(1 2 3)".parse();
+        assert_eq!(e, Ok(Expr::cons(Expr::int(1), Expr::cons(Expr::int(2), Expr::cons(Expr::int(3), Expr::Nil)))));
+
+        let e = "(1 2 . 3)".parse();
+        assert_eq!(e, Ok(Expr::cons(Expr::int(1), Expr::cons(Expr::int(2), Expr::int(3)))));
+
+        let e = "(   1 2 . 0   )".parse();
+        assert_eq!(e, Ok(Expr::cons(Expr::int(1), Expr::cons(Expr::int(2), Expr::int(0)))));
     }
 }
