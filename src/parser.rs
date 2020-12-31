@@ -7,6 +7,7 @@ pub enum ParseError {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Expr {
     Int(i32),
+    Sym(String),
     Cons(Box<Expr>, Box<Expr>),
     Nil,
 }
@@ -17,6 +18,9 @@ impl Expr {
     }
     fn cons(e1: Expr, e2: Expr) -> Expr {
         Expr::Cons(Box::new(e1), Box::new(e2))
+    }
+    fn sym(s: &str) -> Expr {
+        Expr::Sym(s.to_string())
     }
 }
 
@@ -53,7 +57,9 @@ fn consume<'a>(s: &'a str, pat: &str) -> Result<&'a str, ParseError> {
 }
 
 fn parse_expr(s: &str) -> Result<(Expr, &str), ParseError> {
-    parse_num(s).or_else(|_| parse_list(s))
+    parse_num(s)
+        .or_else(|_| parse_list(s))
+        .or_else(|_| parse_symbol(s))
 }
 
 fn parse_num(s: &str) -> ParseResult {
@@ -62,6 +68,15 @@ fn parse_num(s: &str) -> ParseResult {
         Err(ParseError::Unexpected)
     } else {
         Ok((Expr::int(s1.parse().expect("should not reach here")), s2))
+    }
+}
+
+fn parse_symbol(s: &str) -> ParseResult {
+    let (s1, s2) = many(s, |c| matches!( c, 'a'..='z' | 'A'..='Z' | '-' | '?' | '!'));
+    if s1.is_empty() {
+        Err(ParseError::Unexpected)
+    } else {
+        Ok((Expr::sym(s1), s2))
     }
 }
 
@@ -111,9 +126,15 @@ mod test {
 
         let e: Result<Expr, ParseError> = "123a".parse();
         assert_eq!(e, Err(ParseError::Redundant));
+    }
 
-        let e: Result<Expr, ParseError> = "aaa".parse();
-        assert_eq!(e, Err(ParseError::Unexpected));
+    #[test]
+    fn test_symbol() {
+        let e = "a".parse();
+        assert_eq!(e, Ok(Expr::sym("a")));
+
+        let e = "LONG-symbol-name?!?!".parse();
+        assert_eq!(e, Ok(Expr::sym("LONG-symbol-name?!?!")));
     }
 
     #[test]
