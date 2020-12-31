@@ -1,6 +1,6 @@
-use std::io;
+use io::Write;
 use io::{stdin, stdout};
-use io::Write; // for flush()
+use std::io; // for flush()
 
 fn main() -> io::Result<()> {
     loop {
@@ -9,7 +9,8 @@ fn main() -> io::Result<()> {
 
         let mut buf = String::new();
         let nread = stdin().read_line(&mut buf)?;
-        if nread == 0 { // eof
+        if nread == 0 {
+            // eof
             break;
         }
 
@@ -81,8 +82,7 @@ fn consume<'a>(s: &'a str, pat: &str) -> Result<&'a str, ParseError> {
 }
 
 fn parse_expr(s: &str) -> Result<(Expr, &str), ParseError> {
-    parse_num(s)
-        .or_else(|_| parse_list(s))
+    parse_num(s).or_else(|_| parse_list(s))
 }
 
 fn parse_num(s: &str) -> ParseResult {
@@ -105,15 +105,14 @@ fn parse_list(s: &str) -> ParseResult {
         s = skip_ws(s1);
     }
 
-    let (tail, s) =
-        if let Ok(s) = consume(s, ".") {
-            let s = skip_ws(s);
-            let (e, s) = parse_expr(s)?;
-            let s = skip_ws(s);
-            (e, s)
-        } else {
-            (Expr::Nil, s)
-        };
+    let (tail, s) = if let Ok(s) = consume(s, ".") {
+        let s = skip_ws(s);
+        let (e, s) = parse_expr(s)?;
+        let s = skip_ws(s);
+        (e, s)
+    } else {
+        (Expr::Nil, s)
+    };
 
     let s = consume(s, ")")?;
     let e = items.into_iter().rev().fold(tail, |a, x| Expr::cons(x, a));
@@ -154,19 +153,37 @@ mod test {
         let e = "(  3 . 4  )".parse();
         assert_eq!(e, Ok(Expr::cons(Expr::int(3), Expr::int(4))));
     }
-    
+
     #[test]
     fn test_list() {
         let e = "()".parse();
         assert_eq!(e, Ok(Expr::Nil));
 
         let e = "(1 2 3)".parse();
-        assert_eq!(e, Ok(Expr::cons(Expr::int(1), Expr::cons(Expr::int(2), Expr::cons(Expr::int(3), Expr::Nil)))));
+        assert_eq!(
+            e,
+            Ok(Expr::cons(
+                Expr::int(1),
+                Expr::cons(Expr::int(2), Expr::cons(Expr::int(3), Expr::Nil))
+            ))
+        );
 
         let e = "(1 2 . 3)".parse();
-        assert_eq!(e, Ok(Expr::cons(Expr::int(1), Expr::cons(Expr::int(2), Expr::int(3)))));
+        assert_eq!(
+            e,
+            Ok(Expr::cons(
+                Expr::int(1),
+                Expr::cons(Expr::int(2), Expr::int(3))
+            ))
+        );
 
         let e = "(   1 2 . 0   )".parse();
-        assert_eq!(e, Ok(Expr::cons(Expr::int(1), Expr::cons(Expr::int(2), Expr::int(0)))));
+        assert_eq!(
+            e,
+            Ok(Expr::cons(
+                Expr::int(1),
+                Expr::cons(Expr::int(2), Expr::int(0))
+            ))
+        );
     }
 }
