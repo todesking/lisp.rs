@@ -27,7 +27,7 @@ impl Expr {
 
 impl std::str::FromStr for Expr {
     type Err = ParseError;
-    fn from_str<'a>(s: &'a str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = skip_ws(s);
         let (e, s) = parse_expr(s)?;
         let s = skip_ws(s);
@@ -54,11 +54,7 @@ fn skip_ws(s: &str) -> &str {
 }
 
 fn consume<'a>(s: &'a str, pat: &str) -> Option<&'a str> {
-    if s.starts_with(pat) {
-        Some(&s[pat.len()..])
-    } else {
-        None
-    }
+    s.strip_prefix(pat)
 }
 
 fn parse_expr(s: &str) -> Result<(Expr, &str), ParseError> {
