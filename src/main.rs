@@ -1,6 +1,28 @@
-fn main() -> Result<(), ParseError> {
-    let s: Expr = "1".parse()?;
-    println!("{:?}", s);
+use std::io;
+use io::{stdin, stdout};
+use io::Write; // for flush()
+
+fn main() -> io::Result<()> {
+    loop {
+        print!("LISP.rs> ");
+        stdout().flush()?;
+
+        let mut buf = String::new();
+        let nread = stdin().read_line(&mut buf)?;
+        if nread == 0 { // eof
+            break;
+        }
+
+        if buf == "" {
+            continue;
+        }
+        if buf == ":q" {
+            break;
+        }
+
+        let e = buf.parse::<Expr>();
+        println!("=> {:?}", e);
+    }
     Ok(())
 }
 
@@ -51,7 +73,7 @@ fn many(s: &str, mut f: impl FnMut(char) -> bool) -> (&str, &str) {
 }
 
 fn skip_ws(s: &str) -> &str {
-    many(s, |c| c == ' ').1
+    many(s, |c| c == ' ' || c == '\n').1
 }
 
 fn consume<'a>(s: &'a str, pat: &str) -> Result<&'a str, ParseError> {
