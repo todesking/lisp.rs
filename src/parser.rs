@@ -13,13 +13,13 @@ pub enum Expr {
 }
 
 impl Expr {
-    fn int(n: i32) -> Expr {
+    pub fn int(n: i32) -> Expr {
         Expr::Int(n)
     }
-    fn cons(e1: Expr, e2: Expr) -> Expr {
+    pub fn cons(e1: Expr, e2: Expr) -> Expr {
         Expr::Cons(Box::new(e1), Box::new(e2))
     }
-    fn sym(s: &str) -> Expr {
+    pub fn sym(s: &str) -> Expr {
         Expr::Sym(s.to_string())
     }
 }

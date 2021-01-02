@@ -3,7 +3,10 @@ use io::{stdin, stdout};
 use std::io; // for flush()
 
 mod parser;
+mod engine;
+
 use parser::Expr;
+
 
 fn main() -> io::Result<()> {
     loop {
