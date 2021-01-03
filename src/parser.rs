@@ -72,7 +72,10 @@ fn parse_num(s: &str) -> ParseResult {
 }
 
 fn parse_symbol(s: &str) -> ParseResult {
-    let (s1, s2) = many(s, |c| matches!( c, 'a'..='z' | 'A'..='Z' | '-' | '?' | '!'));
+    let (s1, s2) = many(
+        s,
+        |c| matches!( c, 'a'..='z' | 'A'..='Z' | '-' | '?' | '!' | '\''),
+    );
     if s1.is_empty() {
         Err(ParseError::Unexpected)
     } else {
@@ -133,8 +136,8 @@ mod test {
         let e = "a".parse();
         assert_eq!(e, Ok(Expr::sym("a")));
 
-        let e = "LONG-symbol-name?!?!".parse();
-        assert_eq!(e, Ok(Expr::sym("LONG-symbol-name?!?!")));
+        let e = "LONG-symbol'name?!?!".parse();
+        assert_eq!(e, Ok(Expr::sym("LONG-symbol'name?!?!")));
     }
 
     #[test]
