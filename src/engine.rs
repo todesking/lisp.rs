@@ -1,5 +1,5 @@
-use std::rc::Rc;
 use crate::parser::Expr;
+use std::rc::Rc;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum EvalError {
@@ -12,7 +12,7 @@ pub enum Value {
     Int(i32),
     Sym(String),
     Nil,
-    Cons(Rc<Value>, Rc<Value>)
+    Cons(Rc<Value>, Rc<Value>),
 }
 
 pub type Result = std::result::Result<Value, EvalError>;
@@ -30,12 +30,12 @@ impl Env for std::collections::HashMap<String, Value> {
 pub fn eval<E: Env>(e: &Expr, env: &E) -> Result {
     match e {
         Expr::Int(n) => Ok(Value::Int(*n)),
-        Expr::Sym(key) =>
-            env.lookup(key).cloned()
-            .ok_or(EvalError::KeyNotFound(key.to_string())),
+        Expr::Sym(key) => env
+            .lookup(key)
+            .cloned()
+            .ok_or_else(|| EvalError::KeyNotFound(key.to_string())),
         Expr::Nil => Err(EvalError::Nil),
-        Expr::Cons(f, args) =>
-            unimplemented!()
+        Expr::Cons(_f, _args) => unimplemented!(),
     }
 }
 
@@ -49,11 +49,28 @@ mod test {
         HashMap::new()
     }
 
+    fn eval_str<E: Env>(s: &str, env: &mut E) -> Result {
+        let expr = s.parse::<Expr>().unwrap();
+        eval(&expr, env)
+    }
+
+    trait Assertion {
+        fn should_error(&self, err: EvalError);
+        fn should_ok(&self, value: Value);
+    }
+    impl Assertion for Result {
+        fn should_error(&self, err: EvalError) {
+            assert_eq!(self, &Err(err));
+        }
+        fn should_ok(&self, value: Value) {
+            assert_eq!(self, &Ok(value));
+        }
+    }
+
     #[test]
     fn test_num() {
-        let env = new_env();
-        let e = eval(&Expr::int(0), &env);
-        assert_eq!(e, Ok(Value::Int(0)));
+        let mut env = new_env();
+        eval_str("1", &mut env).should_ok(Value::Int(1));
     }
 
     #[test]
@@ -61,7 +78,6 @@ mod test {
         let mut env = new_env();
         env.insert("x".to_string(), Value::Int(123));
 
-        let e = eval(&Expr::sym("x"), &env);
-        assert_eq!(e, Ok(Value::Int(123)));
+        eval_str("x", &mut env).should_ok(Value::Int(123));
     }
 }
