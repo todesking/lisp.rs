@@ -2,13 +2,13 @@ use io::Write;
 use io::{stdin, stdout};
 use std::io; // for flush()
 
-mod engine;
+mod eval;
 mod parser;
 
 use parser::Expr;
 
 fn main() -> io::Result<()> {
-    let env = std::collections::HashMap::<String, engine::Value>::new();
+    let env = std::collections::HashMap::<String, eval::Value>::new();
     loop {
         print!("LISP.rs> ");
         stdout().flush()?;
@@ -34,7 +34,7 @@ fn main() -> io::Result<()> {
             }
             Ok(expr) => {
                 println!("[Input] {:?}", expr);
-                let v = engine::eval(&expr, &env);
+                let v = eval::eval(&expr, &env);
                 match v {
                     Ok(v) => {
                         println!("     => {:?}", v);
