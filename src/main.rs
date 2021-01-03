@@ -8,7 +8,7 @@ mod parser;
 use parser::Expr;
 
 fn main() -> io::Result<()> {
-    let env = std::collections::HashMap::<String, eval::Value>::new();
+    let env = std::collections::HashMap::<String, std::rc::Rc<eval::Value>>::new();
     loop {
         print!("LISP.rs> ");
         stdout().flush()?;
@@ -34,7 +34,7 @@ fn main() -> io::Result<()> {
             }
             Ok(expr) => {
                 println!("[Input] {:?}", expr);
-                let v = eval::eval(&expr, &env);
+                let v = eval::eval(&(&expr).into(), &env);
                 match v {
                     Ok(v) => {
                         println!("     => {:?}", v);

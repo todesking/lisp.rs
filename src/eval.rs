@@ -5,6 +5,8 @@ use std::rc::Rc;
 pub enum EvalError {
     Nil,
     KeyNotFound(String),
+    ImproperArgs,
+    ArgumentSize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -16,32 +18,70 @@ pub enum Value {
 }
 
 impl Value {
-    fn cons(car: Value, cdr: Value) -> Value {
-        Value::Cons(Rc::new(car), Rc::new(cdr))
+    fn cons<T1: Into<Value>, T2: Into<Value>>(car: T1, cdr: T2) -> Value {
+        Value::Cons(Rc::new(car.into()), Rc::new(cdr.into()))
+    }
+    fn to_vec(&self) -> Option<Vec<Rc<Value>>> {
+        let mut rest = self;
+        let mut values = Vec::new();
+        while let Value::Cons(car, cdr) = rest {
+            rest = cdr;
+            values.push(car.clone());
+        }
+        match rest {
+            Value::Nil => Some(values),
+            _ => None,
+        }
     }
 }
 
-impl From<i32> for Value {
-    fn from(x: i32) -> Value {
-        Value::Int(x)
+pub trait ToValue {
+    fn to_value(self) -> Value;
+}
+
+impl<T: ToValue> From<T> for Value {
+    fn from(x: T) -> Value {
+        x.to_value()
     }
 }
 
-impl<T1, T2> From<(T1, T2)> for Value
+impl ToValue for &i32 {
+    fn to_value(self) -> Value {
+        Value::Int(*self)
+    }
+}
+
+impl ToValue for i32 {
+    fn to_value(self) -> Value {
+        Value::Int(self)
+    }
+}
+
+impl<'a, T> ToValue for &'a Vec<T>
 where
-    T1: Into<Value>,
-    T2: Into<Value>,
+    &'a T: Into<Value>,
 {
-    fn from(x: (T1, T2)) -> Value {
-        Value::cons(x.0.into(), x.1.into())
+    fn to_value(self) -> Value {
+        self.iter().rev().fold(Value::Nil, |a, x| Value::cons(x, a))
     }
 }
 
-impl<T: Into<Value>> From<Vec<T>> for Value {
-    fn from(x: Vec<T>) -> Value {
-        x.into_iter()
+impl<'a> ToValue for &'a Vec<Rc<Value>> {
+    fn to_value(self) -> Value {
+        self.iter()
             .rev()
-            .fold(Value::Nil, |a, x| Value::cons(x.into(), a))
+            .fold(Value::Nil, |a, x| Value::Cons(x.clone(), Rc::new(a)))
+    }
+}
+
+impl ToValue for &Expr {
+    fn to_value(self) -> Value {
+        match self {
+            Expr::Int(n) => n.into(),
+            Expr::Sym(s) => Value::Sym(s.clone()),
+            Expr::Nil => Value::Nil,
+            Expr::Cons(car, cdr) => Value::cons(car.as_ref(), cdr.as_ref()),
+        }
     }
 }
 
@@ -52,27 +92,35 @@ macro_rules! list {
     ($x: expr, $($xs: expr),+) => { Value::cons(Value::from($x), list!($($xs),+)) };
 }
 
-pub type Result = std::result::Result<Value, EvalError>;
+pub type Result = std::result::Result<Rc<Value>, EvalError>;
 
 pub trait Env {
-    fn lookup<T: AsRef<str>>(&self, key: &T) -> Option<&Value>;
+    fn lookup<T: AsRef<str>>(&self, key: &T) -> Option<Rc<Value>>;
 }
 
-impl Env for std::collections::HashMap<String, Value> {
-    fn lookup<T: AsRef<str>>(&self, key: &T) -> Option<&Value> {
-        self.get(key.as_ref())
+impl Env for std::collections::HashMap<String, Rc<Value>> {
+    fn lookup<T: AsRef<str>>(&self, key: &T) -> Option<Rc<Value>> {
+        self.get(key.as_ref()).cloned()
     }
 }
 
-pub fn eval<E: Env>(e: &Expr, env: &E) -> Result {
+pub fn eval<E: Env>(e: &Value, env: &E) -> Result {
     match e {
-        Expr::Int(n) => Ok(Value::Int(*n)),
-        Expr::Sym(key) => env
+        Value::Int(n) => Ok(Rc::new(Value::Int(*n))),
+        Value::Sym(key) => env
             .lookup(key)
-            .cloned()
             .ok_or_else(|| EvalError::KeyNotFound(key.to_string())),
-        Expr::Nil => Err(EvalError::Nil),
-        Expr::Cons(_f, _args) => unimplemented!(),
+        Value::Nil => Err(EvalError::Nil),
+        Value::Cons(car, cdr) => match car.as_ref() {
+            Value::Sym(name) if name == "quote" => match cdr.as_ref().to_vec() {
+                None => Err(EvalError::ImproperArgs),
+                Some(args) => match args.as_slice() {
+                    [x] => Ok(x.clone()),
+                    _ => Err(EvalError::ArgumentSize),
+                },
+            },
+            _ => unimplemented!(),
+        },
     }
 }
 
@@ -82,13 +130,13 @@ mod test {
     use crate::parser::Expr;
     use std::collections::HashMap;
 
-    fn new_env() -> HashMap<String, Value> {
+    fn new_env() -> HashMap<String, Rc<Value>> {
         HashMap::new()
     }
 
     fn eval_str<E: Env>(s: &str, env: &mut E) -> Result {
         let expr = s.parse::<Expr>().unwrap();
-        eval(&expr, env)
+        eval(&(&expr).into(), env)
     }
 
     trait Assertion {
@@ -100,7 +148,7 @@ mod test {
             assert_eq!(self, &Err(err));
         }
         fn should_ok(&self, value: Value) {
-            assert_eq!(self, &Ok(value));
+            assert_eq!(self, &Ok(Rc::new(value)));
         }
     }
 
@@ -123,8 +171,20 @@ mod test {
     #[test]
     fn test_sym() {
         let mut env = new_env();
-        env.insert("x".to_string(), 123.into());
+        env.insert("x".to_string(), Rc::new(123.into()));
 
         eval_str("x", &mut env).should_ok(123.into());
+    }
+
+    #[test]
+    fn test_quote() {
+        let mut env = new_env();
+
+        eval_str("'1", &mut env).should_ok(1.into());
+        eval_str("'(1 2)", &mut env).should_ok((&vec![1, 2]).into());
+        eval_str("(quote (1 2))", &mut env).should_ok((&vec![1, 2]).into());
+        eval_str("(quote 1 . 2)", &mut env).should_error(EvalError::ImproperArgs);
+        eval_str("(quote . 1)", &mut env).should_error(EvalError::ImproperArgs);
+        eval_str("(quote 1 2)", &mut env).should_error(EvalError::ArgumentSize);
     }
 }
