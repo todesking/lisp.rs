@@ -56,10 +56,18 @@ fn consume<'a>(s: &'a str, pat: &str) -> Result<&'a str, ParseError> {
     s.strip_prefix(pat).ok_or(ParseError::Unexpected)
 }
 
-fn parse_expr(s: &str) -> Result<(Expr, &str), ParseError> {
-    parse_num(s)
+fn parse_expr(s: &str) -> ParseResult {
+    parse_quote(s)
+        .or_else(|_| parse_num(s))
         .or_else(|_| parse_list(s))
         .or_else(|_| parse_symbol(s))
+}
+
+fn parse_quote(s: &str) -> ParseResult {
+    let s = consume(s, "'")?;
+    let (e, s) = parse_expr(s)?;
+    let e = Expr::cons(Expr::sym("quote"), Expr::cons(e, Expr::Nil));
+    Ok((e, s))
 }
 
 fn parse_num(s: &str) -> ParseResult {
@@ -76,10 +84,10 @@ fn parse_symbol(s: &str) -> ParseResult {
         s,
         |c| matches!( c, 'a'..='z' | 'A'..='Z' | '-' | '?' | '!' | '\''),
     );
-    if s1.is_empty() {
-        Err(ParseError::Unexpected)
-    } else {
-        Ok((Expr::sym(s1), s2))
+    match s1 {
+        "" => Err(ParseError::Unexpected),
+        "'" => Err(ParseError::Unexpected),
+        name => Ok((Expr::sym(name), s2)),
     }
 }
 
@@ -138,6 +146,33 @@ mod test {
 
         let e = "LONG-symbol'name?!?!".parse();
         assert_eq!(e, Ok(Expr::sym("LONG-symbol'name?!?!")));
+    }
+
+    #[test]
+    fn test_quote() {
+        let e = "'".parse::<Expr>();
+        assert_eq!(e, Err(ParseError::Unexpected));
+
+        let e = "' 1".parse::<Expr>();
+        assert_eq!(e, Err(ParseError::Unexpected));
+
+        let e = "'1".parse::<Expr>();
+        assert_eq!(
+            e,
+            Ok(Expr::cons(
+                Expr::sym("quote"),
+                Expr::cons(Expr::int(1), Expr::Nil)
+            ))
+        );
+
+        let e = "'()".parse::<Expr>();
+        assert_eq!(
+            e,
+            Ok(Expr::cons(
+                Expr::sym("quote"),
+                Expr::cons(Expr::Nil, Expr::Nil)
+            ))
+        );
     }
 
     #[test]
