@@ -3,7 +3,6 @@ use std::rc::Rc;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum EvalError {
-    Nil,
     KeyNotFound(String),
     ImproperArgs,
     ArgumentSize,
@@ -107,10 +106,10 @@ impl Env for std::collections::HashMap<String, Rc<Value>> {
 pub fn eval<E: Env>(e: &Value, env: &E) -> Result {
     match e {
         Value::Int(n) => Ok(Rc::new(Value::Int(*n))),
+        Value::Nil => Ok(Rc::new(Value::Nil)),
         Value::Sym(key) => env
             .lookup(key)
             .ok_or_else(|| EvalError::KeyNotFound(key.to_string())),
-        Value::Nil => Err(EvalError::Nil),
         Value::Cons(car, cdr) => match car.as_ref() {
             Value::Sym(name) if name == "quote" => match cdr.as_ref().to_vec() {
                 None => Err(EvalError::ImproperArgs),
@@ -174,6 +173,12 @@ mod test {
         env.insert("x".to_string(), Rc::new(123.into()));
 
         eval_str("x", &mut env).should_ok(123.into());
+    }
+
+    #[test]
+    fn test_nil() {
+        let mut env = new_env();
+        eval_str("()", &mut env).should_ok(Value::Nil);
     }
 
     #[test]
