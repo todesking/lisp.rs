@@ -3,9 +3,10 @@ use std::rc::Rc;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum EvalError {
-    KeyNotFound(String),
+    VariableNotFound(String),
     ImproperArgs,
     ArgumentSize,
+    SymbolRequired,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -95,26 +96,43 @@ pub type Result = std::result::Result<Rc<Value>, EvalError>;
 
 pub trait Env {
     fn lookup<T: AsRef<str>>(&self, key: &T) -> Option<Rc<Value>>;
+    fn set<T: Into<String>>(&mut self, key: T, value: Rc<Value>);
 }
 
 impl Env for std::collections::HashMap<String, Rc<Value>> {
     fn lookup<T: AsRef<str>>(&self, key: &T) -> Option<Rc<Value>> {
         self.get(key.as_ref()).cloned()
     }
+    fn set<T: Into<String>>(&mut self, key: T, value: Rc<Value>) {
+        self.insert(key.into(), value);
+    }
 }
 
-pub fn eval<E: Env>(e: &Value, env: &E) -> Result {
+pub fn eval<E: Env>(e: &Value, env: &mut E) -> Result {
     match e {
         Value::Int(n) => Ok(Rc::new(Value::Int(*n))),
         Value::Nil => Ok(Rc::new(Value::Nil)),
         Value::Sym(key) => env
             .lookup(key)
-            .ok_or_else(|| EvalError::KeyNotFound(key.to_string())),
+            .ok_or_else(|| EvalError::VariableNotFound(key.to_string())),
         Value::Cons(car, cdr) => match car.as_ref() {
             Value::Sym(name) if name == "quote" => match cdr.as_ref().to_vec() {
                 None => Err(EvalError::ImproperArgs),
                 Some(args) => match args.as_slice() {
                     [x] => Ok(x.clone()),
+                    _ => Err(EvalError::ArgumentSize),
+                },
+            },
+            Value::Sym(name) if name == "define" => match cdr.to_vec() {
+                None => Err(EvalError::ImproperArgs),
+                Some(args) => match args.as_slice() {
+                    [name, value] => match name.as_ref() {
+                        Value::Sym(name) => {
+                            env.set(name, value.clone());
+                            Ok(Rc::new(Value::Nil))
+                        }
+                        _ => Err(EvalError::SymbolRequired),
+                    },
                     _ => Err(EvalError::ArgumentSize),
                 },
             },
@@ -191,5 +209,16 @@ mod test {
         eval_str("(quote 1 . 2)", &mut env).should_error(EvalError::ImproperArgs);
         eval_str("(quote . 1)", &mut env).should_error(EvalError::ImproperArgs);
         eval_str("(quote 1 2)", &mut env).should_error(EvalError::ArgumentSize);
+    }
+
+    #[test]
+    fn test_define() {
+        let mut env = new_env();
+        eval_str("x", &mut env).should_error(EvalError::VariableNotFound("x".into()));
+        eval_str("(define x 1)", &mut env).should_ok(Value::Nil);
+        eval_str("x", &mut env).should_ok(1.into());
+
+        eval_str("(define x 2 3)", &mut env).should_error(EvalError::ArgumentSize);
+        eval_str("(define 1 2)", &mut env).should_error(EvalError::SymbolRequired);
     }
 }
