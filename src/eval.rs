@@ -25,6 +25,28 @@ pub enum Value {
         Vec<Rc<Value>>,
         Option<Rc<LocalEnv>>,
     ),
+    Fun(FunData),
+}
+
+#[derive(Clone)]
+pub struct FunData {
+    name: String,
+    fun: Rc<dyn Fn(&[Rc<Value>]) -> Result>,
+}
+
+impl PartialEq for FunData {
+    fn eq(&self, rhs: &Self) -> bool {
+        self.name == rhs.name && std::ptr::eq(self.fun.as_ref(), rhs.fun.as_ref())
+    }
+}
+impl Eq for FunData {}
+impl std::fmt::Debug for FunData {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        fmt.debug_struct("")
+            .field("name", &self.name)
+            .field("fun", &"<function>")
+            .finish()
+    }
 }
 
 impl Value {
@@ -71,6 +93,22 @@ impl Value {
                 Ok((values, Some(v)))
             }
         }
+    }
+    fn fun0<F, R>(name: &str, f: F) -> Value
+    where
+        F: Fn() -> R + 'static,
+        R: Into<Value>,
+    {
+        let name = name.to_string();
+        let fun = Rc::new(move |args: &[Rc<Value>]| {
+            if !args.is_empty() {
+                Err(EvalError::ArgumentSize)
+            } else {
+                let v = f();
+                Ok(Rc::new(v.into()))
+            }
+        });
+        Value::Fun(FunData { name, fun })
     }
 }
 
@@ -211,6 +249,7 @@ fn eval_local(e: &Value, global: &mut GlobalEnv, local: Option<&Rc<LocalEnv>>) -
             .map_or_else(|| global.lookup(key), |l| l.lookup(key))
             .ok_or_else(|| EvalError::VariableNotFound(key.to_string())),
         Value::Lambda(_, _, _, _) => unimplemented!(),
+        Value::Fun(_) => unimplemented!(),
         Value::Cons(car, cdr) => match car.as_ref() {
             Value::Sym(name) if name == "quote" => match cdr.as_ref().to_vec() {
                 None => Err(EvalError::ImproperArgs),
@@ -293,6 +332,9 @@ fn eval_apply(f: &Rc<Value>, args: &[Rc<Value>], global: &mut GlobalEnv) -> Resu
             }
             Ok(e)
         }
+        Value::Fun(FunData {fun, ..}) => {
+            fun(args)
+        },
         _ => Err(EvalError::CantApply(f.clone())),
     }
 }
@@ -422,5 +464,14 @@ mod test {
         eval_str("(my-head 1 2)", &mut env).should_ok(1.into());
         eval_str("(my-tail 1 2)", &mut env).should_ok(list!(2));
         eval_str("(my-head)", &mut env).should_error(EvalError::ArgumentSize);
+    }
+
+    #[test]
+    fn test_fun() {
+        let mut env = GlobalEnv::new();
+
+        env.set("f", Rc::new(Value::fun0("fun", || 123)));
+        eval_str("(f)", &mut env).should_ok(123.into());
+        eval_str("(f 1)", &mut env).should_error(EvalError::ArgumentSize);
     }
 }
