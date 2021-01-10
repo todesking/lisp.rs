@@ -7,17 +7,24 @@ pub enum EvalError {
     ImproperArgs,
     ArgumentSize,
     SymbolRequired,
-    InvalidParamList,
-    CantApply,
+    CantApply(Rc<Value>),
 }
 
+// TODO: Regroup to SExpr { Value(SValue), Ref(Rc<SRef>) }
+// SValue { Int(i32), ... }
+// SRef { Cons(SExpr, Sexpr), Lambda(...), ... }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Value {
     Int(i32),
     Sym(String),
     Nil,
     Cons(Rc<Value>, Rc<Value>),
-    Lambda(Vec<String>, Vec<Rc<Value>>, Option<Rc<LocalEnv>>),
+    Lambda(
+        Vec<String>,
+        Option<String>,
+        Vec<Rc<Value>>,
+        Option<Rc<LocalEnv>>,
+    ),
 }
 
 impl Value {
@@ -25,6 +32,7 @@ impl Value {
         Value::Cons(Rc::new(car.into()), Rc::new(cdr.into()))
     }
     fn to_vec(&self) -> Option<Vec<Rc<Value>>> {
+        // TODO: refactor to use collect_improper()
         if self == &Value::Nil {
             return Some(vec![]);
         }
@@ -38,6 +46,30 @@ impl Value {
         match rest {
             Value::Nil => Some(values),
             _ => None,
+        }
+    }
+    fn collect_improper<'a, F, T, E>(&'a self, f: F) -> std::result::Result<(Vec<T>, Option<T>), E>
+    where
+        F: Fn(&'a Value) -> std::result::Result<T, E>,
+        T: 'a,
+    {
+        if self == &Value::Nil {
+            return Ok((vec![], None));
+        }
+
+        let mut rest = self;
+        let mut values = Vec::new();
+        while let Value::Cons(car, cdr) = rest {
+            rest = cdr;
+            let v = f(car)?;
+            values.push(v);
+        }
+        match rest {
+            Value::Nil => Ok((values, None)),
+            x => {
+                let v = f(x)?;
+                Ok((values, Some(v)))
+            }
         }
     }
 }
@@ -92,6 +124,14 @@ impl ToValue for &Expr {
     }
 }
 
+impl ToValue for &[Rc<Value>] {
+    fn to_value(self) -> Value {
+        self.iter()
+            .rev()
+            .fold(Value::Nil, |a, x| Value::Cons(x.clone(), Rc::new(a)))
+    }
+}
+
 #[macro_export]
 macro_rules! list {
     () =>  { Value::Nil };
@@ -126,12 +166,27 @@ pub struct LocalEnv {
 }
 
 impl LocalEnv {
-    fn new(param_names: &[String], args: &[Rc<Value>], parent: Option<Rc<LocalEnv>>) -> LocalEnv {
-        let mut values = std::collections::HashMap::new();
-        for (k, v) in param_names.iter().zip(args) {
-            values.insert(k.clone(), v.clone());
+    fn new(
+        param_names: &[String],
+        rest_name: Option<String>,
+        args: &[Rc<Value>],
+        parent: Option<Rc<LocalEnv>>,
+    ) -> std::result::Result<LocalEnv, EvalError> {
+        let invalid_argument_size = (rest_name.is_none() && param_names.len() != args.len())
+            || (rest_name.is_some() && param_names.len() > args.len());
+        if invalid_argument_size {
+            Err(EvalError::ArgumentSize)
+        } else {
+            let mut values = std::collections::HashMap::new();
+            for (k, v) in param_names.iter().zip(args) {
+                values.insert(k.clone(), v.clone());
+            }
+            if let Some(rest_name) = rest_name {
+                values.insert(rest_name, Rc::new(Value::from(&args[param_names.len()..])));
+            }
+
+            Ok(LocalEnv { values, parent })
         }
-        LocalEnv { values, parent }
     }
     fn lookup<T: AsRef<str>>(&self, key: &T) -> Option<Rc<Value>> {
         self.values
@@ -155,7 +210,7 @@ fn eval_local(e: &Value, global: &mut GlobalEnv, local: Option<&Rc<LocalEnv>>) -
         Value::Sym(key) => local
             .map_or_else(|| global.lookup(key), |l| l.lookup(key))
             .ok_or_else(|| EvalError::VariableNotFound(key.to_string())),
-        Value::Lambda(_, _, _) => unimplemented!(),
+        Value::Lambda(_, _, _, _) => unimplemented!(),
         Value::Cons(car, cdr) => match car.as_ref() {
             Value::Sym(name) if name == "quote" => match cdr.as_ref().to_vec() {
                 None => Err(EvalError::ImproperArgs),
@@ -179,29 +234,19 @@ fn eval_local(e: &Value, global: &mut GlobalEnv, local: Option<&Rc<LocalEnv>>) -
                 },
             },
             Value::Sym(name) if name == "lambda" => match cdr.as_ref() {
-                Value::Cons(params, body) => match params.to_vec() {
-                    None => Err(EvalError::InvalidParamList),
-                    Some(params) => {
-                        let mut param_names = vec![];
-                        for p in params.iter() {
-                            match p.as_ref() {
-                                Value::Sym(name) => param_names.push(name),
-                                _ => break,
-                            }
-                        }
-                        if param_names.len() != params.len() {
-                            Err(EvalError::SymbolRequired)
-                        } else {
-                            match body.to_vec() {
-                                None => Err(EvalError::ImproperArgs),
-                                Some(body) => match body.as_slice() {
-                                    [] => Err(EvalError::ArgumentSize),
-                                    body => eval_lambda(&param_names, body, local),
-                                },
-                            }
-                        }
+                Value::Cons(params, body) => {
+                    let (param_names, rest_name) = params.collect_improper(|v| match v {
+                        Value::Sym(name) => Ok(name),
+                        _ => Err(EvalError::SymbolRequired),
+                    })?;
+                    match body.to_vec() {
+                        None => Err(EvalError::ImproperArgs),
+                        Some(body) => match body.as_slice() {
+                            [] => Err(EvalError::ArgumentSize),
+                            body => eval_lambda(&param_names, rest_name, body, local),
+                        },
                     }
-                },
+                }
                 Value::Nil => Err(EvalError::ArgumentSize),
                 _ => Err(EvalError::ImproperArgs),
             },
@@ -223,29 +268,32 @@ fn eval_local(e: &Value, global: &mut GlobalEnv, local: Option<&Rc<LocalEnv>>) -
 
 fn eval_lambda(
     param_names: &[&String],
+    rest_name: Option<&String>,
     body: &[Rc<Value>],
     local: Option<&Rc<LocalEnv>>,
 ) -> Result {
     let param_names: Vec<String> = param_names.iter().map(|x| (*x).clone()).collect();
     let body: Vec<Rc<Value>> = body.to_vec();
-    Ok(Rc::new(Value::Lambda(param_names, body, local.cloned())))
+    Ok(Rc::new(Value::Lambda(
+        param_names,
+        rest_name.cloned(),
+        body,
+        local.cloned(),
+    )))
 }
 
 fn eval_apply(f: &Rc<Value>, args: &[Rc<Value>], global: &mut GlobalEnv) -> Result {
     match f.as_ref() {
-        Value::Lambda(param_names, body, local) => {
-            if args.len() != param_names.len() {
-                Err(EvalError::ArgumentSize)
-            } else {
-                let local = Rc::new(LocalEnv::new(param_names, args, local.clone()));
-                let mut e = Rc::new(Value::Nil);
-                for b in body {
-                    e = eval_local(b, global, Some(&local))?;
-                }
-                Ok(e)
+        Value::Lambda(param_names, rest_name, body, parent) => {
+            let local = LocalEnv::new(param_names, rest_name.clone(), args, parent.clone())?;
+            let local = Rc::new(local);
+            let mut e = Rc::new(Value::Nil);
+            for b in body {
+                e = eval_local(b, global, Some(&local))?;
             }
+            Ok(e)
         }
-        _ => Err(EvalError::CantApply),
+        _ => Err(EvalError::CantApply(f.clone())),
     }
 }
 
@@ -255,7 +303,7 @@ mod test {
     use crate::parser::Expr;
 
     fn eval_str(s: &str, env: &mut GlobalEnv) -> Result {
-        let expr = s.parse::<Expr>().unwrap();
+        let expr = s.parse::<Expr>().expect("should valid sexpr");
         eval(&(&expr).into(), env)
     }
 
@@ -338,8 +386,8 @@ mod test {
         eval_str("(lambda)", &mut env).should_error(EvalError::ArgumentSize);
         eval_str("(lambda () 1 . 2)", &mut env).should_error(EvalError::ImproperArgs);
         eval_str("(lambda (x))", &mut env).should_error(EvalError::ArgumentSize);
-        eval_str("(lambda x 1)", &mut env).should_error(EvalError::InvalidParamList);
-        eval_str("(lambda 1 1)", &mut env).should_error(EvalError::InvalidParamList);
+
+        eval_str("(lambda 1 1)", &mut env).should_error(EvalError::SymbolRequired);
     }
     #[test]
     fn test_lambda_simple() {
@@ -357,5 +405,22 @@ mod test {
 
         eval_str("(((lambda (x) (lambda (y) y)) 1) 2)", &mut env).should_ok(2.into());
         eval_str("(((lambda (x) (lambda (y) x)) 1) 2)", &mut env).should_ok(1.into());
+    }
+
+    #[test]
+    fn test_lambda_varargs() {
+        let mut env = GlobalEnv::new();
+
+        eval_str("(define my-list (lambda x x))", &mut env).should_ok(Value::Nil);
+        eval_str("(my-list 1 2 3)", &mut env).should_ok(list!(1, 2, 3));
+        eval_str("(my-list)", &mut env).should_ok(list!());
+
+        eval_str("(define my-head (lambda (x . xs) x))", &mut env).should_ok(Value::Nil);
+        eval_str("(define my-tail (lambda (x . xs) xs))", &mut env).should_ok(Value::Nil);
+        eval_str("(my-head 1)", &mut env).should_ok(1.into());
+        eval_str("(my-tail 1)", &mut env).should_ok(list!());
+        eval_str("(my-head 1 2)", &mut env).should_ok(1.into());
+        eval_str("(my-tail 1 2)", &mut env).should_ok(list!(2));
+        eval_str("(my-head)", &mut env).should_error(EvalError::ArgumentSize);
     }
 }
