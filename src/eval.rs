@@ -7,6 +7,7 @@ pub enum EvalError {
     ImproperArgs,
     ArgumentSize,
     SymbolRequired,
+    InvalidArg,
     CantApply(Rc<Value>),
 }
 
@@ -29,14 +30,17 @@ pub enum Value {
 }
 
 #[derive(Clone)]
+#[allow(clippy::type_complexity)]
 pub struct FunData {
     name: String,
-    fun: Rc<dyn Fn(&[Rc<Value>]) -> Result>,
+    fun: Rc<dyn for<'a> Fn(&'a [Rc<Value>]) -> Result>,
 }
 
 impl PartialEq for FunData {
     fn eq(&self, rhs: &Self) -> bool {
-        self.name == rhs.name && std::ptr::eq(self.fun.as_ref(), rhs.fun.as_ref())
+        let pl = self.fun.as_ref() as *const _ as *const ();
+        let pr = rhs.fun.as_ref() as *const _ as *const ();
+        self.name == rhs.name && pl == pr
     }
 }
 impl Eq for FunData {}
@@ -94,6 +98,7 @@ impl Value {
             }
         }
     }
+    // TODO: Use macro to abstract funX functions
     fn fun0<F, R>(name: &str, f: F) -> Value
     where
         F: Fn() -> R + 'static,
@@ -107,6 +112,43 @@ impl Value {
                 let v = f();
                 Ok(Rc::new(v.into()))
             }
+        });
+        Value::Fun(FunData { name, fun })
+    }
+
+    fn fun1<F, T1, R>(name: &str, f: F) -> Value
+    where
+        F: Fn(T1) -> R + 'static,
+        T1: Extract,
+        R: Into<Value>,
+    {
+        let name = name.to_string();
+        let fun = Rc::new(move |args: &[Rc<Value>]| {
+            if args.len() != 1 {
+                return Err(EvalError::ArgumentSize);
+            }
+            let x1 = T1::extract(args[0].as_ref()).ok_or(EvalError::InvalidArg)?;
+            let v = f(x1).into();
+            Ok(Rc::new(v))
+        });
+        Value::Fun(FunData { name, fun })
+    }
+    fn fun2<F, T1, T2, R>(name: &str, f: F) -> Value
+    where
+        F: Fn(T1, T2) -> R + 'static,
+        T1: Extract,
+        T2: Extract,
+        R: Into<Value>,
+    {
+        let name = name.to_string();
+        let fun = Rc::new(move |args: &[Rc<Value>]| {
+            if args.len() != 2 {
+                return Err(EvalError::ArgumentSize);
+            }
+            let x1 = T1::extract(args[0].as_ref()).ok_or(EvalError::InvalidArg)?;
+            let x2 = T2::extract(args[1].as_ref()).ok_or(EvalError::InvalidArg)?;
+            let v = f(x1, x2).into();
+            Ok(Rc::new(v))
         });
         Value::Fun(FunData { name, fun })
     }
@@ -167,6 +209,22 @@ impl ToValue for &[Rc<Value>] {
         self.iter()
             .rev()
             .fold(Value::Nil, |a, x| Value::Cons(x.clone(), Rc::new(a)))
+    }
+}
+
+trait Extract
+where
+    Self: Sized,
+{
+    fn extract(x: &Value) -> Option<Self>;
+}
+
+impl Extract for i32 {
+    fn extract(x: &Value) -> Option<Self> {
+        match x {
+            Value::Int(n) => Some(*n),
+            _ => None,
+        }
     }
 }
 
@@ -332,9 +390,7 @@ fn eval_apply(f: &Rc<Value>, args: &[Rc<Value>], global: &mut GlobalEnv) -> Resu
             }
             Ok(e)
         }
-        Value::Fun(FunData {fun, ..}) => {
-            fun(args)
-        },
+        Value::Fun(FunData { fun, .. }) => fun(args),
         _ => Err(EvalError::CantApply(f.clone())),
     }
 }
@@ -470,8 +526,21 @@ mod test {
     fn test_fun() {
         let mut env = GlobalEnv::new();
 
-        env.set("f", Rc::new(Value::fun0("fun", || 123)));
-        eval_str("(f)", &mut env).should_ok(123.into());
-        eval_str("(f 1)", &mut env).should_error(EvalError::ArgumentSize);
+        env.set("f0", Rc::new(Value::fun0("f0", || 123)));
+        eval_str("(f0)", &mut env).should_ok(123.into());
+        eval_str("(f0 1)", &mut env).should_error(EvalError::ArgumentSize);
+
+        env.set("f1", Rc::new(Value::fun1("f1", |n: i32| n)));
+        eval_str("(f1)", &mut env).should_error(EvalError::ArgumentSize);
+        eval_str("(f1 1 2)", &mut env).should_error(EvalError::ArgumentSize);
+        eval_str("(f1 'a)", &mut env).should_error(EvalError::InvalidArg);
+        eval_str("(f1 1)", &mut env).should_ok(1.into());
+
+        env.set("f2", Rc::new(Value::fun2("f2", |n: i32, m: i32| n + m)));
+        eval_str("(f2)", &mut env).should_error(EvalError::ArgumentSize);
+        eval_str("(f2 1)", &mut env).should_error(EvalError::ArgumentSize);
+        eval_str("(f2 1 2 3)", &mut env).should_error(EvalError::ArgumentSize);
+        eval_str("(f2 1 'a)", &mut env).should_error(EvalError::InvalidArg);
+        eval_str("(f2 1 2)", &mut env).should_ok(3.into());
     }
 }
