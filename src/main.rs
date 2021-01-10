@@ -8,7 +8,7 @@ mod parser;
 use parser::Expr;
 
 fn main() -> io::Result<()> {
-    let mut global = eval::GlobalEnv::new();
+    let mut global = eval::GlobalEnv::predef();
     loop {
         print!("LISP.rs> ");
         stdout().flush()?;
