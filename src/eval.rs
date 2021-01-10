@@ -169,7 +169,8 @@ fn eval_local(e: &Value, global: &mut GlobalEnv, local: Option<&Rc<LocalEnv>>) -
                 Some(args) => match args.as_slice() {
                     [name, value] => match name.as_ref() {
                         Value::Sym(name) => {
-                            global.set(name, value.clone());
+                            let value = eval_local(value, global, local)?;
+                            global.set(name, value);
                             Ok(Rc::new(Value::Nil))
                         }
                         _ => Err(EvalError::SymbolRequired),
@@ -316,12 +317,18 @@ mod test {
     #[test]
     fn test_define() {
         let mut env = GlobalEnv::new();
+
         eval_str("x", &mut env).should_error(EvalError::VariableNotFound("x".into()));
         eval_str("(define x 1)", &mut env).should_ok(Value::Nil);
         eval_str("x", &mut env).should_ok(1.into());
 
+        eval_str("(define x '1)", &mut env).should_ok(Value::Nil);
+        eval_str("x", &mut env).should_ok(1.into());
+
         eval_str("(define x 2 3)", &mut env).should_error(EvalError::ArgumentSize);
         eval_str("(define 1 2)", &mut env).should_error(EvalError::SymbolRequired);
+        eval_str("(define x aaa)", &mut env)
+            .should_error(EvalError::VariableNotFound("aaa".into()));
     }
 
     #[test]
