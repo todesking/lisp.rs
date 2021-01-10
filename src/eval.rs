@@ -152,6 +152,24 @@ impl Value {
         });
         Value::Fun(FunData { name, fun })
     }
+    fn fun_fold<F, T1>(name: &str, init: T1, f: F) -> Value
+    where
+        F: Fn(T1, T1) -> T1 + 'static,
+        T1: Extract + Clone + Into<Value> + 'static,
+    {
+        let name = name.to_string();
+        let fun = Rc::new(move |args: &[Rc<Value>]| {
+            let mut a = init.clone();
+            for x in args.iter() {
+                match T1::extract(x) {
+                    Some(x) => a = f(a, x),
+                    None => return Err(EvalError::InvalidArg),
+                }
+            }
+            Ok(Rc::new(a.into()))
+        });
+        Value::Fun(FunData { name, fun })
+    }
 }
 
 pub trait ToValue {
@@ -542,5 +560,11 @@ mod test {
         eval_str("(f2 1 2 3)", &mut env).should_error(EvalError::ArgumentSize);
         eval_str("(f2 1 'a)", &mut env).should_error(EvalError::InvalidArg);
         eval_str("(f2 1 2)", &mut env).should_ok(3.into());
+
+        env.set("sum", Rc::new(Value::fun_fold("fn", 0, |a, x| a + x)));
+        eval_str("(sum)", &mut env).should_ok(0.into());
+        eval_str("(sum 1)", &mut env).should_ok(1.into());
+        eval_str("(sum 1 2)", &mut env).should_ok(3.into());
+        eval_str("(sum 'x)", &mut env).should_error(EvalError::InvalidArg);
     }
 }
