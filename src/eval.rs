@@ -286,11 +286,23 @@ impl GlobalEnv {
             values: std::collections::HashMap::new(),
         }
     }
+    pub fn predef() -> GlobalEnv {
+        let mut global = Self::new();
+        global.set_value("+", Value::fun_reduce("+", |l: i32, r: i32| l + r));
+        global.set_value("-", Value::fun_fold("-", 0, |l: i32, r: i32| l - r));
+        global.set_value("*", Value::fun_reduce("*", |l: i32, r: i32| l * r));
+        global.set_value("/", Value::fun2("/", |l: i32, r: i32| l / r));
+        global.set_value("%", Value::fun2("%", |l: i32, r: i32| l % r));
+        global
+    }
     pub fn lookup<T: AsRef<str>>(&self, key: &T) -> Option<Rc<Value>> {
         self.values.get(key.as_ref()).cloned()
     }
     pub fn set<T: Into<String>>(&mut self, key: T, value: Rc<Value>) {
         self.values.insert(key.into(), value);
+    }
+    pub fn set_value<T: Into<String>>(&mut self, key: T, value: Value) {
+        self.set(key, Rc::new(value));
     }
 }
 
@@ -597,4 +609,32 @@ mod test {
         eval_str("(sum1 1)", &mut env).should_ok(1.into());
         eval_str("(sum1 1 2)", &mut env).should_ok(3.into());
     }
+
+    #[test]
+    fn test_predef_arithmetic() {
+        let mut env = GlobalEnv::predef();
+
+        eval_str("(+)", &mut env).should_error(EvalError::ArgumentSize);
+        eval_str("(+ 1)", &mut env).should_ok(1.into());
+        eval_str("(+ 1 2)", &mut env).should_ok(3.into());
+
+        // TODO: (-) should accept >= 1 argument
+        eval_str("(-)", &mut env).should_ok(0.into());
+        eval_str("(- 1)", &mut env).should_ok((-1).into());
+        eval_str("(- 1 2)", &mut env).should_ok((-3).into());
+
+        eval_str("(*)", &mut env).should_error(EvalError::ArgumentSize);
+        eval_str("(* 1)", &mut env).should_ok(1.into());
+        eval_str("(* 1 2)", &mut env).should_ok(2.into());
+
+        eval_str("(/)", &mut env).should_error(EvalError::ArgumentSize);
+        eval_str("(/ 1)", &mut env).should_error(EvalError::ArgumentSize);
+        eval_str("(/ 4 2)", &mut env).should_ok(2.into());
+
+        eval_str("(%)", &mut env).should_error(EvalError::ArgumentSize);
+        eval_str("(% 1)", &mut env).should_error(EvalError::ArgumentSize);
+        eval_str("(% 4 2)", &mut env).should_ok(0.into());
+    }
+
+    // TODO: Floating point arithmetic
 }
