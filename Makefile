@@ -1,14 +1,15 @@
 .PHONY: all check fix clippy test
 
-all: check test
+all: fix clippy test
 
-check: fix clippy
-
-fix:
+fix: check
 	cargo fmt && cargo fix --allow-dirty --allow-staged
 
-clippy:
+clippy: check
 	find . -name '*.rs' | xargs touch && cargo clippy --all-features --all-targets
 
-test:
+check:
+	cargo check
+
+test: check
 	RUST_BACKTRACE=1 cargo test
