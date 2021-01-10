@@ -17,7 +17,7 @@ pub enum Value {
     Sym(String),
     Nil,
     Cons(Rc<Value>, Rc<Value>),
-    Lambda(Vec<String>, Vec<Rc<Value>>),
+    Lambda(Vec<String>, Vec<Rc<Value>>, Option<Rc<LocalEnv>>),
 }
 
 impl Value {
@@ -119,20 +119,28 @@ impl GlobalEnv {
     }
 }
 
-struct LocalEnv {
+#[derive(Debug, PartialEq, Eq)]
+pub struct LocalEnv {
     values: std::collections::HashMap<String, Rc<Value>>,
+    parent: Option<Rc<LocalEnv>>,
 }
 
 impl LocalEnv {
-    fn new(param_names: &[String], args: &[Rc<Value>]) -> LocalEnv {
+    fn new(param_names: &[String], args: &[Rc<Value>], parent: Option<Rc<LocalEnv>>) -> LocalEnv {
         let mut values = std::collections::HashMap::new();
         for (k, v) in param_names.iter().zip(args) {
             values.insert(k.clone(), v.clone());
         }
-        LocalEnv { values }
+        LocalEnv { values, parent }
     }
     fn lookup<T: AsRef<str>>(&self, key: &T) -> Option<Rc<Value>> {
-        self.values.get(key.as_ref()).cloned()
+        self.values
+            .get(key.as_ref())
+            .cloned()
+            .or_else(|| match &self.parent {
+                None => None,
+                Some(l) => l.lookup(key),
+            })
     }
 }
 
@@ -147,7 +155,7 @@ fn eval_local(e: &Value, global: &mut GlobalEnv, local: Option<&Rc<LocalEnv>>) -
         Value::Sym(key) => local
             .map_or_else(|| global.lookup(key), |l| l.lookup(key))
             .ok_or_else(|| EvalError::VariableNotFound(key.to_string())),
-        Value::Lambda(_, _) => unimplemented!(),
+        Value::Lambda(_, _, _) => unimplemented!(),
         Value::Cons(car, cdr) => match car.as_ref() {
             Value::Sym(name) if name == "quote" => match cdr.as_ref().to_vec() {
                 None => Err(EvalError::ImproperArgs),
@@ -187,7 +195,7 @@ fn eval_local(e: &Value, global: &mut GlobalEnv, local: Option<&Rc<LocalEnv>>) -
                                 None => Err(EvalError::ImproperArgs),
                                 Some(body) => match body.as_slice() {
                                     [] => Err(EvalError::ArgumentSize),
-                                    body => eval_lambda(&param_names, body),
+                                    body => eval_lambda(&param_names, body, local),
                                 },
                             }
                         }
@@ -212,19 +220,23 @@ fn eval_local(e: &Value, global: &mut GlobalEnv, local: Option<&Rc<LocalEnv>>) -
     }
 }
 
-fn eval_lambda(param_names: &[&String], body: &[Rc<Value>]) -> Result {
+fn eval_lambda(
+    param_names: &[&String],
+    body: &[Rc<Value>],
+    local: Option<&Rc<LocalEnv>>,
+) -> Result {
     let param_names: Vec<String> = param_names.iter().map(|x| (*x).clone()).collect();
     let body: Vec<Rc<Value>> = body.to_vec();
-    Ok(Rc::new(Value::Lambda(param_names, body)))
+    Ok(Rc::new(Value::Lambda(param_names, body, local.cloned())))
 }
 
 fn eval_apply(f: &Rc<Value>, args: &[Rc<Value>], global: &mut GlobalEnv) -> Result {
     match f.as_ref() {
-        Value::Lambda(param_names, body) => {
+        Value::Lambda(param_names, body, local) => {
             if args.len() != param_names.len() {
                 Err(EvalError::ArgumentSize)
             } else {
-                let local = Rc::new(LocalEnv::new(param_names, args));
+                let local = Rc::new(LocalEnv::new(param_names, args, local.clone()));
                 let mut e = Rc::new(Value::Nil);
                 for b in body {
                     e = eval_local(b, global, Some(&local))?;
@@ -313,7 +325,7 @@ mod test {
     }
 
     #[test]
-    fn test_lambda() {
+    fn test_lambda_error() {
         let mut env = GlobalEnv::new();
 
         eval_str("(lambda)", &mut env).should_error(EvalError::ArgumentSize);
@@ -321,10 +333,22 @@ mod test {
         eval_str("(lambda (x))", &mut env).should_error(EvalError::ArgumentSize);
         eval_str("(lambda x 1)", &mut env).should_error(EvalError::InvalidParamList);
         eval_str("(lambda 1 1)", &mut env).should_error(EvalError::InvalidParamList);
+    }
+    #[test]
+    fn test_lambda_simple() {
+        let mut env = GlobalEnv::new();
 
         eval_str("((lambda () 1))", &mut env).should_ok(1.into());
         eval_str("((lambda (x) x) 1)", &mut env).should_ok(1.into());
         eval_str("((lambda (x y) x) 1)", &mut env).should_error(EvalError::ArgumentSize);
         eval_str("((lambda (x y) y) 1 2)", &mut env).should_ok(2.into());
+    }
+
+    #[test]
+    fn test_lambda_closure() {
+        let mut env = GlobalEnv::new();
+
+        eval_str("(((lambda (x) (lambda (y) y)) 1) 2)", &mut env).should_ok(2.into());
+        eval_str("(((lambda (x) (lambda (y) x)) 1) 2)", &mut env).should_ok(1.into());
     }
 }
