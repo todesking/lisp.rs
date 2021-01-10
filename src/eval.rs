@@ -276,6 +276,7 @@ macro_rules! list {
 
 pub type Result = std::result::Result<Rc<Value>, EvalError>;
 
+#[derive(Debug)]
 pub struct GlobalEnv {
     values: std::collections::HashMap<String, Rc<Value>>,
 }
@@ -355,7 +356,13 @@ fn eval_local(e: &Value, global: &mut GlobalEnv, local: Option<&Rc<LocalEnv>>) -
         Value::Int(n) => Ok(Rc::new(Value::Int(*n))),
         Value::Nil => Ok(Rc::new(Value::Nil)),
         Value::Sym(key) => local
-            .map_or_else(|| global.lookup(key), |l| l.lookup(key))
+            .map_or_else(
+                || global.lookup(key),
+                |l| match l.lookup(key) {
+                    None => global.lookup(key),
+                    found @ Some(_) => found,
+                },
+            )
             .ok_or_else(|| EvalError::VariableNotFound(key.to_string())),
         Value::Lambda(_, _, _, _) => unimplemented!(),
         Value::Fun(_) => unimplemented!(),
@@ -571,6 +578,14 @@ mod test {
         eval_str("(my-head 1 2)", &mut env).should_ok(1.into());
         eval_str("(my-tail 1 2)", &mut env).should_ok(list!(2));
         eval_str("(my-head)", &mut env).should_error(EvalError::ArgumentSize);
+    }
+
+    #[test]
+    fn test_lambda_lookup_global() {
+        let mut env = GlobalEnv::new();
+        env.set_value("x", 1.into());
+
+        eval_str("((lambda () x))", &mut env).should_ok(1.into());
     }
 
     #[test]
