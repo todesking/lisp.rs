@@ -170,6 +170,27 @@ impl Value {
         });
         Value::Fun(FunData { name, fun })
     }
+    fn fun_reduce<F, T1>(name: &str, f: F) -> Value
+    where
+        F: Fn(T1, T1) -> T1 + 'static,
+        T1: Extract + Clone + Into<Value> + 'static,
+    {
+        let name = name.to_string();
+        let fun = Rc::new(move |args: &[Rc<Value>]| {
+            let mut it = args.iter();
+            let a = it.next().ok_or(EvalError::ArgumentSize)?;
+            let a = T1::extract(a).ok_or(EvalError::InvalidArg)?;
+            let mut a = a;
+            for x in it {
+                match T1::extract(x) {
+                    Some(x) => a = f(a, x),
+                    None => return Err(EvalError::InvalidArg),
+                }
+            }
+            Ok(Rc::new(a.into()))
+        });
+        Value::Fun(FunData { name, fun })
+    }
 }
 
 pub trait ToValue {
@@ -561,10 +582,19 @@ mod test {
         eval_str("(f2 1 'a)", &mut env).should_error(EvalError::InvalidArg);
         eval_str("(f2 1 2)", &mut env).should_ok(3.into());
 
-        env.set("sum", Rc::new(Value::fun_fold("fn", 0, |a, x| a + x)));
+        env.set("sum", Rc::new(Value::fun_fold("sum", 0, |a, x| a + x)));
         eval_str("(sum)", &mut env).should_ok(0.into());
         eval_str("(sum 1)", &mut env).should_ok(1.into());
         eval_str("(sum 1 2)", &mut env).should_ok(3.into());
         eval_str("(sum 'x)", &mut env).should_error(EvalError::InvalidArg);
+
+        env.set(
+            "sum1",
+            Rc::new(Value::fun_reduce("sum1", |a: i32, x: i32| a + x)),
+        );
+        eval_str("(sum1)", &mut env).should_error(EvalError::ArgumentSize);
+        eval_str("(sum1 'x)", &mut env).should_error(EvalError::InvalidArg);
+        eval_str("(sum1 1)", &mut env).should_ok(1.into());
+        eval_str("(sum1 1 2)", &mut env).should_ok(3.into());
     }
 }
