@@ -1,7 +1,7 @@
 use crate::value::Value;
 use std::rc::Rc;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct GlobalEnv {
     values: std::collections::HashMap<String, Rc<Value>>,
 }
