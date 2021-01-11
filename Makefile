@@ -1,4 +1,4 @@
-.PHONY: all check fix clippy test
+.PHONY: all check fix clippy test clean
 
 all: fix clippy test
 
@@ -13,3 +13,6 @@ check:
 
 test: check
 	RUST_BACKTRACE=1 cargo test
+
+clean:
+	cargo clean
