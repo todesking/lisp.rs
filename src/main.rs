@@ -2,17 +2,10 @@ use io::Write;
 use io::{stdin, stdout};
 use std::io; // for flush()
 
-#[macro_use]
-mod value;
-mod eval;
-mod global_env;
-mod local_env;
-mod parser;
-
-use parser::Expr;
+use lisprs::parser::Expr;
 
 fn main() -> io::Result<()> {
-    let mut global = global_env::GlobalEnv::predef();
+    let mut global = lisprs::global_env::GlobalEnv::predef();
     loop {
         print!("LISP.rs> ");
         stdout().flush()?;
@@ -38,7 +31,7 @@ fn main() -> io::Result<()> {
             }
             Ok(expr) => {
                 println!("[Input] {:?}", expr);
-                let v = eval::eval(&(&expr).into(), &mut global);
+                let v = lisprs::eval::eval(&(&expr).into(), &mut global);
                 match v {
                     Ok(v) => {
                         println!("     => {:?}", v);

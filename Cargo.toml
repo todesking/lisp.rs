@@ -1,5 +1,5 @@
 [package]
-name = "lisp-rs"
+name = "lisprs"
 version = "0.1.0"
 authors = ["todesking <discommunicative@gmail.com>"]
 edition = "2018"
