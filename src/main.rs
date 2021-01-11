@@ -2,13 +2,17 @@ use io::Write;
 use io::{stdin, stdout};
 use std::io; // for flush()
 
+#[macro_use]
+mod value;
 mod eval;
+mod global_env;
+mod local_env;
 mod parser;
 
 use parser::Expr;
 
 fn main() -> io::Result<()> {
-    let mut global = eval::GlobalEnv::predef();
+    let mut global = global_env::GlobalEnv::predef();
     loop {
         print!("LISP.rs> ");
         stdout().flush()?;
