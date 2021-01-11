@@ -165,11 +165,10 @@ fn eval_apply(f: &Rc<Value>, args: &[Rc<Value>], global: &mut GlobalEnv) -> Resu
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::parser::Expr;
 
     fn eval_str(s: &str, env: &mut GlobalEnv) -> Result {
-        let expr = s.parse::<Expr>().expect("should valid sexpr");
-        eval(&(&expr).into(), env)
+        let expr = s.parse::<Value>().expect("should valid sexpr");
+        eval(&expr, env)
     }
 
     trait Assertion {

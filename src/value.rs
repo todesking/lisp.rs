@@ -1,7 +1,6 @@
 use crate::eval::EvalError;
 use crate::eval::Result;
 use crate::local_env::LocalEnv;
-use crate::parser::Expr;
 use std::rc::Rc;
 
 // TODO: Regroup to SExpr { Value(SValue), Ref(Rc<SRef>) }
@@ -50,6 +49,9 @@ impl std::fmt::Debug for FunData {
 impl Value {
     pub fn cons<T1: Into<Value>, T2: Into<Value>>(car: T1, cdr: T2) -> Value {
         Value::Cons(Rc::new(car.into()), Rc::new(cdr.into()))
+    }
+    pub fn sym<S: Into<String>>(name: S) -> Value {
+        Value::Sym(name.into())
     }
     pub fn to_vec(&self) -> Option<Vec<Rc<Value>>> {
         // TODO: refactor to use collect_improper()
@@ -225,17 +227,6 @@ impl<'a> ToValue for &'a Vec<Rc<Value>> {
         self.iter()
             .rev()
             .fold(Value::Nil, |a, x| Value::Cons(x.clone(), Rc::new(a)))
-    }
-}
-
-impl ToValue for &Expr {
-    fn to_value(self) -> Value {
-        match self {
-            Expr::Int(n) => n.into(),
-            Expr::Sym(s) => Value::Sym(s.clone()),
-            Expr::Nil => Value::Nil,
-            Expr::Cons(car, cdr) => Value::cons(car.as_ref(), cdr.as_ref()),
-        }
     }
 }
 
