@@ -366,9 +366,9 @@ mod test {
         eval_str("(+ 1 2)", &mut env).should_ok(3.into());
 
         // TODO: (-) should accept >= 1 argument
-        eval_str("(-)", &mut env).should_ok(0.into());
+        eval_str("(-)", &mut env).should_error(EvalError::ArgumentSize);
         eval_str("(- 1)", &mut env).should_ok((-1).into());
-        eval_str("(- 1 2)", &mut env).should_ok((-3).into());
+        eval_str("(- 3 8)", &mut env).should_ok((-5).into());
 
         eval_str("(*)", &mut env).should_error(EvalError::ArgumentSize);
         eval_str("(* 1)", &mut env).should_ok(1.into());

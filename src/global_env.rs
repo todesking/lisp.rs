@@ -1,3 +1,5 @@
+use crate::eval::EvalError;
+use crate::value::Extract;
 use crate::value::Value;
 use std::rc::Rc;
 
@@ -17,7 +19,24 @@ impl GlobalEnv {
         global.set_value("true", Value::Bool(true));
         global.set_value("false", Value::Bool(false));
         global.set_value("+", Value::fun_reduce("+", |l: i32, r: i32| l + r));
-        global.set_value("-", Value::fun_fold("-", 0, |l: i32, r: i32| l - r));
+        global.set_fun("-", |args| {
+            let mut it = args.iter();
+            let x0 = it.next().ok_or(EvalError::ArgumentSize)?;
+            let x0 = i32::extract(x0).ok_or(EvalError::InvalidArg)?;
+            if let Some(x1) = it.next() {
+                // binary or more
+                let x1 = i32::extract(x1).ok_or(EvalError::InvalidArg)?;
+                let mut a = x0 - x1;
+                for xn in it {
+                    let xn = i32::extract(xn).ok_or(EvalError::InvalidArg)?;
+                    a -= xn;
+                }
+                Ok(Rc::new(Value::Int(a)))
+            } else {
+                // unary
+                Ok(Rc::new(Value::Int(-x0)))
+            }
+        });
         global.set_value("*", Value::fun_reduce("*", |l: i32, r: i32| l * r));
         global.set_value("/", Value::fun2("/", |l: i32, r: i32| l / r));
         global.set_value("%", Value::fun2("%", |l: i32, r: i32| l % r));
