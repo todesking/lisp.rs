@@ -381,7 +381,19 @@ mod test {
         eval_str("(%)", &mut env).should_error(EvalError::ArgumentSize);
         eval_str("(% 1)", &mut env).should_error(EvalError::ArgumentSize);
         eval_str("(% 4 2)", &mut env).should_ok(0.into());
+        // TODO: Floating point arithmetic
     }
 
-    // TODO: Floating point arithmetic
+    #[test]
+    fn test_predef_eq() {
+        let mut env = GlobalEnv::predef();
+
+        eval_str("(eq? 1 1)", &mut env).should_ok(true.into());
+        eval_str("(eq? 1 2)", &mut env).should_ok(false.into());
+
+        eval_str("(eq? '(1 2 (3 4) . 5) '(1 2 (3 4) . 5))", &mut env).should_ok(true.into());
+
+        eval_str("(eq? eq? eq?)", &mut env).should_ok(true.into());
+        eval_str("(eq? eq? +)", &mut env).should_ok(false.into());
+    }
 }

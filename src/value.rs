@@ -25,7 +25,7 @@ pub enum Value {
 #[derive(Clone)]
 #[allow(clippy::type_complexity)]
 pub struct FunData {
-    name: String,
+    pub name: String,
     pub fun: Rc<dyn for<'a> Fn(&'a [Rc<Value>]) -> Result>,
 }
 
@@ -210,6 +210,12 @@ impl ToValue for &i32 {
 impl ToValue for i32 {
     fn to_value(self) -> Value {
         Value::Int(self)
+    }
+}
+
+impl ToValue for bool {
+    fn to_value(self) -> Value {
+        Value::Bool(self)
     }
 }
 
