@@ -27,6 +27,7 @@ pub enum Value {
         Option<Rc<LocalEnv>>,
     ),
     Fun(FunData),
+    Bool(bool),
 }
 
 #[derive(Clone)]
@@ -289,6 +290,8 @@ impl GlobalEnv {
     }
     pub fn predef() -> GlobalEnv {
         let mut global = Self::new();
+        global.set_value("true", Value::Bool(true));
+        global.set_value("false", Value::Bool(false));
         global.set_value("+", Value::fun_reduce("+", |l: i32, r: i32| l + r));
         global.set_value("-", Value::fun_fold("-", 0, |l: i32, r: i32| l - r));
         global.set_value("*", Value::fun_reduce("*", |l: i32, r: i32| l * r));
@@ -354,6 +357,7 @@ pub fn eval(e: &Value, global: &mut GlobalEnv) -> Result {
 fn eval_local(e: &Value, global: &mut GlobalEnv, local: Option<&Rc<LocalEnv>>) -> Result {
     match e {
         Value::Int(n) => Ok(Rc::new(Value::Int(*n))),
+        Value::Bool(b) => Ok(Rc::new(Value::Bool(*b))),
         Value::Nil => Ok(Rc::new(Value::Nil)),
         Value::Sym(key) => local
             .map_or_else(
@@ -385,6 +389,22 @@ fn eval_local(e: &Value, global: &mut GlobalEnv, local: Option<&Rc<LocalEnv>>) -
                         }
                         _ => Err(EvalError::SymbolRequired),
                     },
+                    _ => Err(EvalError::ArgumentSize),
+                },
+            },
+            Value::Sym(name) if name == "if" => match cdr.to_vec() {
+                None => Err(EvalError::ImproperArgs),
+                Some(args) => match args.as_slice() {
+                    [cond, th, el] => {
+                        let cond = eval_local(cond, global, local)?;
+                        match cond.as_ref() {
+                            Value::Bool(b) => {
+                                let value = if *b { th } else { el };
+                                eval_local(value, global, local)
+                            }
+                            _ => Err(EvalError::InvalidArg),
+                        }
+                    }
                     _ => Err(EvalError::ArgumentSize),
                 },
             },
@@ -589,6 +609,22 @@ mod test {
     }
 
     #[test]
+    fn test_if() {
+        let mut env = GlobalEnv::new();
+        env.set_value("t", Value::Bool(true));
+        env.set_value("f", Value::Bool(false));
+
+        eval_str("(if t 1 2)", &mut env).should_ok(1.into());
+        eval_str("(if f 1 2)", &mut env).should_ok(2.into());
+
+        eval_str("(if t (define x 1) (define x 2))", &mut env).should_ok(Value::Nil);
+        eval_str("x", &mut env).should_ok(1.into());
+
+        eval_str("(if f (define x 1) (define x 2))", &mut env).should_ok(Value::Nil);
+        eval_str("x", &mut env).should_ok(2.into());
+    }
+
+    #[test]
     fn test_fun() {
         let mut env = GlobalEnv::new();
 
@@ -623,6 +659,14 @@ mod test {
         eval_str("(sum1 'x)", &mut env).should_error(EvalError::InvalidArg);
         eval_str("(sum1 1)", &mut env).should_ok(1.into());
         eval_str("(sum1 1 2)", &mut env).should_ok(3.into());
+    }
+
+    #[test]
+    fn test_predef_constants() {
+        let mut env = GlobalEnv::predef();
+
+        eval_str("true", &mut env).should_ok(Value::Bool(true));
+        eval_str("false", &mut env).should_ok(Value::Bool(false));
     }
 
     #[test]
