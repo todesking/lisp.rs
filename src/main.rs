@@ -2,10 +2,8 @@ use io::Write;
 use io::{stdin, stdout};
 use std::io; // for flush()
 
-use lisprs::parser::Expr;
-
 fn main() -> io::Result<()> {
-    let mut global = lisprs::global_env::GlobalEnv::predef();
+    let mut global = lisprs::predef();
     loop {
         print!("LISP.rs> ");
         stdout().flush()?;
@@ -24,14 +22,14 @@ fn main() -> io::Result<()> {
             break;
         }
 
-        let expr = buf.parse::<Expr>();
+        let expr = lisprs::parse(buf.as_ref());
         match expr {
             Err(err) => {
                 println!("Parse error: {:?}", err);
             }
             Ok(expr) => {
                 println!("[Input] {:?}", expr);
-                let v = lisprs::eval::eval(&(&expr).into(), &mut global);
+                let v = lisprs::eval(&expr, &mut global);
                 match v {
                     Ok(v) => {
                         println!("     => {:?}", v);
