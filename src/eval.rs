@@ -396,4 +396,25 @@ mod test {
         eval_str("(eq? eq? eq?)", &mut env).should_ok(true.into());
         eval_str("(eq? eq? +)", &mut env).should_ok(false.into());
     }
+
+    #[test]
+    fn test_complex_fib() {
+        let mut env = GlobalEnv::predef();
+
+        eval_str(
+            "
+            (define fib (lambda (n)
+                (if (eq? n 0) 0
+                    (if (eq? n 1) 1
+                        (+ (fib (- n 1)) (fib (- n 2)))))))",
+            &mut env,
+        )
+        .should_ok(Value::Nil);
+        eval_str("(fib 0)", &mut env).should_ok(0.into());
+        eval_str("(fib 1)", &mut env).should_ok(1.into());
+        eval_str("(fib 2)", &mut env).should_ok(1.into());
+        eval_str("(fib 3)", &mut env).should_ok(2.into());
+        eval_str("(fib 4)", &mut env).should_ok(3.into());
+        eval_str("(fib 5)", &mut env).should_ok(5.into());
+    }
 }
