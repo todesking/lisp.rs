@@ -10,21 +10,22 @@ fn main() -> io::Result<()> {
         print!("LISP.rs> ");
         stdout().flush()?;
 
-        let mut buf = String::new();
-        let nread = stdin().read_line(&mut buf)?;
+        let mut line = String::new();
+        let nread = stdin().read_line(&mut line)?;
         if nread == 0 {
             // eof
             break;
         }
+        let line = line.trim();
 
-        if buf == "" {
+        if line == "" {
             continue;
         }
-        if buf == ":q" {
+        if line == ":q" {
             break;
         }
 
-        let expr = lisprs::parse(buf.as_ref());
+        let expr = lisprs::parse(line);
         match expr {
             Err(err) => {
                 println!("Parse error: {:?}", err);
