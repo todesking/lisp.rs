@@ -2,6 +2,7 @@ use std::rc::Rc;
 
 use crate::global_env::GlobalEnv;
 use crate::local_env::LocalEnv;
+use crate::value::RefValue;
 use crate::value::Value;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -11,10 +12,10 @@ pub enum EvalError {
     ArgumentSize,
     SymbolRequired,
     InvalidArg,
-    CantApply(Rc<Value>),
+    CantApply(Value),
 }
 
-pub type Result = std::result::Result<Rc<Value>, EvalError>;
+pub type Result = std::result::Result<Value, EvalError>;
 
 pub fn eval(e: &Value, global: &mut GlobalEnv) -> Result {
     eval_local(e, global, None)
@@ -22,9 +23,9 @@ pub fn eval(e: &Value, global: &mut GlobalEnv) -> Result {
 
 fn eval_local(e: &Value, global: &mut GlobalEnv, local: Option<&Rc<LocalEnv>>) -> Result {
     match e {
-        Value::Int(n) => Ok(Rc::new(Value::Int(*n))),
-        Value::Bool(b) => Ok(Rc::new(Value::Bool(*b))),
-        Value::Nil => Ok(Rc::new(Value::Nil)),
+        Value::Int(n) => Ok(Value::int(*n)),
+        Value::Bool(v) => Ok(Value::bool(*v)),
+        Value::Nil => Ok(Value::nil()),
         Value::Sym(key) => local
             .map_or_else(
                 || global.lookup(key),
@@ -34,13 +35,11 @@ fn eval_local(e: &Value, global: &mut GlobalEnv, local: Option<&Rc<LocalEnv>>) -
                 },
             )
             .ok_or_else(|| EvalError::VariableNotFound(key.to_string())),
-        Value::Lambda { .. } => unimplemented!(),
-        Value::Fun { .. } => unimplemented!(),
         Value::Cons(car, cdr) => match car.as_ref() {
             Value::Sym(name) if name == "quote" => match cdr.as_ref().to_vec() {
                 None => Err(EvalError::ImproperArgs),
                 Some(args) => match args.as_slice() {
-                    [x] => Ok(x.clone()),
+                    [x] => Ok(x.as_ref().clone()),
                     _ => Err(EvalError::ArgumentSize),
                 },
             },
@@ -51,7 +50,7 @@ fn eval_local(e: &Value, global: &mut GlobalEnv, local: Option<&Rc<LocalEnv>>) -
                         Value::Sym(name) => {
                             let value = eval_local(value, global, local)?;
                             global.set(name, value);
-                            Ok(Rc::new(Value::Nil))
+                            Ok(Value::nil())
                         }
                         _ => Err(EvalError::SymbolRequired),
                     },
@@ -63,9 +62,9 @@ fn eval_local(e: &Value, global: &mut GlobalEnv, local: Option<&Rc<LocalEnv>>) -
                 Some(args) => match args.as_slice() {
                     [cond, th, el] => {
                         let cond = eval_local(cond, global, local)?;
-                        match cond.as_ref() {
+                        match cond {
                             Value::Bool(b) => {
-                                let value = if *b { th } else { el };
+                                let value = if b { th } else { el };
                                 eval_local(value, global, local)
                             }
                             _ => Err(EvalError::InvalidArg),
@@ -104,6 +103,10 @@ fn eval_local(e: &Value, global: &mut GlobalEnv, local: Option<&Rc<LocalEnv>>) -
                 }
             },
         },
+        Value::Ref(r) => match r.as_ref() {
+            RefValue::Lambda { .. } => unimplemented!(),
+            RefValue::Fun { .. } => unimplemented!(),
+        },
     }
 }
 
@@ -114,19 +117,18 @@ fn eval_lambda(
     local: Option<&Rc<LocalEnv>>,
 ) -> Result {
     let param_names: Vec<String> = param_names.iter().map(|x| (*x).clone()).collect();
-    let body: Vec<Rc<Value>> = body.to_vec();
-    Ok(Rc::new(Value::Lambda {
+    Ok(Value::lambda(
         param_names,
-        rest_name: rest_name.cloned(),
-        body,
-        env: local.cloned(),
-    }))
+        rest_name.cloned(),
+        body.iter().map(|v| v.as_ref().clone()).collect(),
+        local.cloned(),
+    ))
 }
 
 fn bind_args(
     param_names: &[String],
     rest_name: Option<String>,
-    args: &[Rc<Value>],
+    args: &[Value],
     parent: Option<Rc<LocalEnv>>,
 ) -> std::result::Result<LocalEnv, EvalError> {
     let invalid_argument_size = (rest_name.is_none() && param_names.len() != args.len())
@@ -139,30 +141,32 @@ fn bind_args(
             values.insert(k.clone(), v.clone());
         }
         if let Some(rest_name) = rest_name {
-            values.insert(rest_name, Rc::new(Value::from(&args[param_names.len()..])));
+            values.insert(rest_name, Value::from(&args[param_names.len()..]));
         }
 
         Ok(LocalEnv::new(values, parent))
     }
 }
 
-fn eval_apply(f: &Rc<Value>, args: &[Rc<Value>], global: &mut GlobalEnv) -> Result {
-    match f.as_ref() {
-        Value::Lambda {
-            param_names,
-            rest_name,
-            body,
-            env,
-        } => {
-            let local = bind_args(param_names, rest_name.clone(), args, env.clone())?;
-            let local = Rc::new(local);
-            let mut e = Rc::new(Value::Nil);
-            for b in body {
-                e = eval_local(b, global, Some(&local))?;
+fn eval_apply(f: &Value, args: &[Value], global: &mut GlobalEnv) -> Result {
+    match f {
+        Value::Ref(r) => match r.as_ref() {
+            RefValue::Lambda {
+                param_names,
+                rest_name,
+                body,
+                env,
+            } => {
+                let local = bind_args(param_names, rest_name.clone(), args, env.clone())?;
+                let local = Rc::new(local);
+                let mut e = Value::nil();
+                for b in body {
+                    e = eval_local(b, global, Some(&local))?;
+                }
+                Ok(e)
             }
-            Ok(e)
-        }
-        Value::Fun { fun, .. } => fun.0(args),
+            RefValue::Fun { fun, .. } => fun.0(args),
+        },
         _ => Err(EvalError::CantApply(f.clone())),
     }
 }
@@ -185,7 +189,7 @@ mod test {
             assert_eq!(self, &Err(err));
         }
         fn should_ok(&self, value: Value) {
-            assert_eq!(self, &Ok(Rc::new(value)));
+            assert_eq!(self, &Ok(value));
         }
     }
 
@@ -208,7 +212,7 @@ mod test {
     #[test]
     fn test_sym() {
         let mut env = GlobalEnv::new();
-        env.set("x".to_string(), Rc::new(123.into()));
+        env.set("x".to_string(), 123.into());
 
         eval_str("x", &mut env).should_ok(123.into());
     }
@@ -296,7 +300,7 @@ mod test {
     #[test]
     fn test_lambda_lookup_global() {
         let mut env = GlobalEnv::new();
-        env.set_value("x", 1.into());
+        env.set("x", 1.into());
 
         eval_str("((lambda () x))", &mut env).should_ok(1.into());
     }
@@ -304,8 +308,8 @@ mod test {
     #[test]
     fn test_if() {
         let mut env = GlobalEnv::new();
-        env.set_value("t", Value::Bool(true));
-        env.set_value("f", Value::Bool(false));
+        env.set("t", Value::Bool(true));
+        env.set("f", Value::Bool(false));
 
         eval_str("(if t 1 2)", &mut env).should_ok(1.into());
         eval_str("(if f 1 2)", &mut env).should_ok(2.into());
@@ -321,33 +325,30 @@ mod test {
     fn test_fun() {
         let mut env = GlobalEnv::new();
 
-        env.set("f0", Rc::new(Value::fun0("f0", || 123)));
+        env.set("f0", Value::fun0("f0", || 123));
         eval_str("(f0)", &mut env).should_ok(123.into());
         eval_str("(f0 1)", &mut env).should_error(EvalError::ArgumentSize);
 
-        env.set("f1", Rc::new(Value::fun1("f1", |n: i32| n)));
+        env.set("f1", Value::fun1("f1", |n: i32| n));
         eval_str("(f1)", &mut env).should_error(EvalError::ArgumentSize);
         eval_str("(f1 1 2)", &mut env).should_error(EvalError::ArgumentSize);
         eval_str("(f1 'a)", &mut env).should_error(EvalError::InvalidArg);
         eval_str("(f1 1)", &mut env).should_ok(1.into());
 
-        env.set("f2", Rc::new(Value::fun2("f2", |n: i32, m: i32| n + m)));
+        env.set("f2", Value::fun2("f2", |n: i32, m: i32| n + m));
         eval_str("(f2)", &mut env).should_error(EvalError::ArgumentSize);
         eval_str("(f2 1)", &mut env).should_error(EvalError::ArgumentSize);
         eval_str("(f2 1 2 3)", &mut env).should_error(EvalError::ArgumentSize);
         eval_str("(f2 1 'a)", &mut env).should_error(EvalError::InvalidArg);
         eval_str("(f2 1 2)", &mut env).should_ok(3.into());
 
-        env.set("sum", Rc::new(Value::fun_fold("sum", 0, |a, x| a + x)));
+        env.set("sum", Value::fun_fold("sum", 0, |a, x| a + x));
         eval_str("(sum)", &mut env).should_ok(0.into());
         eval_str("(sum 1)", &mut env).should_ok(1.into());
         eval_str("(sum 1 2)", &mut env).should_ok(3.into());
         eval_str("(sum 'x)", &mut env).should_error(EvalError::InvalidArg);
 
-        env.set(
-            "sum1",
-            Rc::new(Value::fun_reduce("sum1", |a: i32, x: i32| a + x)),
-        );
+        env.set("sum1", Value::fun_reduce("sum1", |a: i32, x: i32| a + x));
         eval_str("(sum1)", &mut env).should_error(EvalError::ArgumentSize);
         eval_str("(sum1 'x)", &mut env).should_error(EvalError::InvalidArg);
         eval_str("(sum1 1)", &mut env).should_ok(1.into());

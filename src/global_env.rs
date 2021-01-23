@@ -1,11 +1,10 @@
 use crate::eval::EvalError;
 use crate::value::Extract;
 use crate::value::Value;
-use std::rc::Rc;
 
 #[derive(Debug, Default)]
 pub struct GlobalEnv {
-    values: std::collections::HashMap<String, Rc<Value>>,
+    values: std::collections::HashMap<String, Value>,
 }
 
 impl GlobalEnv {
@@ -16,9 +15,9 @@ impl GlobalEnv {
     }
     pub fn predef() -> GlobalEnv {
         let mut global = Self::new();
-        global.set_value("true", Value::Bool(true));
-        global.set_value("false", Value::Bool(false));
-        global.set_value("+", Value::fun_reduce("+", |l: i32, r: i32| l + r));
+        global.set("true", Value::Bool(true));
+        global.set("false", Value::Bool(false));
+        global.set("+", Value::fun_reduce("+", |l: i32, r: i32| l + r));
         global.set_fun("-", |args| {
             let mut it = args.iter();
             let x0 = it.next().ok_or(EvalError::ArgumentSize)?;
@@ -31,39 +30,35 @@ impl GlobalEnv {
                     let xn = i32::extract(xn).ok_or(EvalError::InvalidArg)?;
                     a -= xn;
                 }
-                Ok(Rc::new(Value::Int(a)))
+                Ok(Value::int(a))
             } else {
                 // unary
-                Ok(Rc::new(Value::Int(-x0)))
+                Ok(Value::int(-x0))
             }
         });
-        global.set_value("*", Value::fun_reduce("*", |l: i32, r: i32| l * r));
-        global.set_value("/", Value::fun2("/", |l: i32, r: i32| l / r));
-        global.set_value("%", Value::fun2("%", |l: i32, r: i32| l % r));
+        global.set("*", Value::fun_reduce("*", |l: i32, r: i32| l * r));
+        global.set("/", Value::fun2("/", |l: i32, r: i32| l / r));
+        global.set("%", Value::fun2("%", |l: i32, r: i32| l % r));
         global.set_fun("eq?", |args| {
             if args.len() != 2 {
                 Err(crate::eval::EvalError::ArgumentSize)
             } else {
-                Ok(Rc::new(Value::Bool(args[0] == args[1])))
+                Ok(Value::bool(args[0] == args[1]))
             }
         });
         global
     }
-    pub fn lookup<T: AsRef<str>>(&self, key: &T) -> Option<Rc<Value>> {
+    pub fn lookup<T: AsRef<str>>(&self, key: &T) -> Option<Value> {
         self.values.get(key.as_ref()).cloned()
     }
-    pub fn set<T: Into<String>>(&mut self, key: T, value: Rc<Value>) {
+    pub fn set<T: Into<String>>(&mut self, key: T, value: Value) {
         self.values.insert(key.into(), value);
-    }
-    pub fn set_value<T: Into<String>>(&mut self, key: T, value: Value) {
-        self.set(key, Rc::new(value));
     }
     pub fn set_fun<F>(&mut self, name: &str, f: F)
     where
-        F: Fn(&[Rc<Value>]) -> Result<Rc<Value>, crate::eval::EvalError> + 'static,
+        F: Fn(&[Value]) -> Result<Value, crate::eval::EvalError> + 'static,
     {
         let value = Value::fun(name, f);
-        let value = Rc::new(value);
         self.set(name.to_string(), value);
     }
 }

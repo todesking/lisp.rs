@@ -6,8 +6,6 @@ use lisprs::global_env::GlobalEnv;
 use lisprs::list;
 use lisprs::value::Value;
 
-use std::rc::Rc;
-
 fn run_bench(c: &mut Criterion, n: i32, global: &mut GlobalEnv) {
     let call = list![Value::sym("fib"), n];
     c.bench_function(format!("fib({})", n).as_ref(), |b| {
@@ -29,7 +27,7 @@ fn bench_fib(c: &mut Criterion) {
     // sanity check
     assert_eq!(
         eval(&list![Value::sym("fib"), 6], &mut global),
-        Ok(Rc::new(Value::Int(8)))
+        Ok(Value::Int(8))
     );
 
     for n in &[0, 10, 15] {
