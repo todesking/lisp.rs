@@ -1,4 +1,4 @@
-.PHONY: all check fix clippy test clean
+.PHONY: all check fix clippy test clean bench build help
 
 all: fix clippy test
 
@@ -16,3 +16,12 @@ test: check
 
 clean:
 	cargo clean
+
+bench:
+	cargo bench
+
+build:
+	cargo build --all-targets
+
+help:
+	@grep '^[^#[:space:]].*:' Makefile
