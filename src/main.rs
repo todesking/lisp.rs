@@ -2,6 +2,8 @@ use io::Write;
 use io::{stdin, stdout};
 use std::io; // for flush()
 
+use lisprs::global_env::GlobalEnv;
+
 fn main() -> io::Result<()> {
     let mut global = lisprs::predef();
     load_cli_env(&mut global);
@@ -25,30 +27,13 @@ fn main() -> io::Result<()> {
             break;
         }
 
-        let expr = lisprs::parse(line);
-        match expr {
-            Err(err) => {
-                println!("Parse error: {:?}", err);
-            }
-            Ok(expr) => {
-                println!("[Input] {:?}", expr);
-                let v = lisprs::eval(&expr, &mut global);
-                match v {
-                    Ok(v) => {
-                        println!("     => {:?}", v);
-                    }
-                    Err(err) => {
-                        println!("Error=> {:?}", err);
-                    }
-                }
-            }
-        }
+        read_eval_print(line, &mut global);
     }
     Ok(())
 }
 
-fn load_cli_env(global: &mut lisprs::global_env::GlobalEnv) {
-    fn define(global: &mut lisprs::global_env::GlobalEnv, name: &str, src: &str) {
+fn load_cli_env(global: &mut GlobalEnv) {
+    fn define(global: &mut GlobalEnv, name: &str, src: &str) {
         let expr = lisprs::parse(src).expect(name);
         let value = lisprs::eval(&expr, global).expect(name);
         global.set(name, value);
@@ -62,4 +47,25 @@ fn load_cli_env(global: &mut lisprs::global_env::GlobalEnv) {
                 (if (eq? n 1) 1
                     (+ (fib (- n 1)) (fib (- n 2))))))",
     );
+}
+
+fn read_eval_print(s: &str, global: &mut GlobalEnv) {
+    let expr = lisprs::parse(s);
+    match expr {
+        Err(err) => {
+            println!("Parse error: {:?}", err);
+        }
+        Ok(expr) => {
+            println!("[Input] {:?}", expr);
+            let v = lisprs::eval(&expr, global);
+            match v {
+                Ok(v) => {
+                    println!("     => {:?}", v);
+                }
+                Err(err) => {
+                    println!("Error=> {:?}", err);
+                }
+            }
+        }
+    }
 }
