@@ -50,6 +50,7 @@ fn load_cli_env(global: &mut GlobalEnv) {
 }
 
 fn read_eval_print(s: &str, global: &mut GlobalEnv) {
+    let start = std::time::Instant::now();
     let expr = lisprs::parse(s);
     match expr {
         Err(err) => {
@@ -68,4 +69,5 @@ fn read_eval_print(s: &str, global: &mut GlobalEnv) {
             }
         }
     }
+    println!("Elapsed: {}[ms]", start.elapsed().as_millis());
 }
