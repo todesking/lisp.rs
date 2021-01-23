@@ -12,37 +12,34 @@ pub enum Value {
     Sym(String),
     Nil,
     Cons(Rc<Value>, Rc<Value>),
-    Lambda(
-        Vec<String>,
-        Option<String>,
-        Vec<Rc<Value>>,
-        Option<Rc<LocalEnv>>,
-    ),
-    Fun(FunData),
+    Lambda {
+        param_names: Vec<String>,
+        rest_name: Option<String>,
+        body: Vec<Rc<Value>>,
+        env: Option<Rc<LocalEnv>>,
+    },
+    Fun {
+        name: String,
+        fun: Fun,
+    },
     Bool(bool),
 }
 
 #[derive(Clone)]
 #[allow(clippy::type_complexity)]
-pub struct FunData {
-    pub name: String,
-    pub fun: Rc<dyn for<'a> Fn(&'a [Rc<Value>]) -> Result>,
-}
+pub struct Fun(pub Rc<dyn for<'a> Fn(&'a [Rc<Value>]) -> Result>);
 
-impl PartialEq for FunData {
+impl PartialEq for Fun {
     fn eq(&self, rhs: &Self) -> bool {
-        let pl = self.fun.as_ref() as *const _ as *const ();
-        let pr = rhs.fun.as_ref() as *const _ as *const ();
-        self.name == rhs.name && pl == pr
+        let pl = self.0.as_ref() as *const _ as *const ();
+        let pr = rhs.0.as_ref() as *const _ as *const ();
+        pl == pr
     }
 }
-impl Eq for FunData {}
-impl std::fmt::Debug for FunData {
+impl Eq for Fun {}
+impl std::fmt::Debug for Fun {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        fmt.debug_struct("")
-            .field("name", &self.name)
-            .field("fun", &"<function>")
-            .finish()
+        fmt.write_str("<primitive function>")
     }
 }
 
@@ -52,6 +49,15 @@ impl Value {
     }
     pub fn sym<S: Into<String>>(name: S) -> Value {
         Value::Sym(name.into())
+    }
+    pub fn fun<F>(name: &str, f: F) -> Value
+    where
+        F: for<'a> Fn(&'a [Rc<Value>]) -> Result + 'static,
+    {
+        Value::Fun {
+            name: name.to_string(),
+            fun: Fun(Rc::new(f)),
+        }
     }
     pub fn to_vec(&self) -> Option<Vec<Rc<Value>>> {
         // TODO: refactor to use collect_improper()
@@ -103,16 +109,15 @@ impl Value {
         F: Fn() -> R + 'static,
         R: Into<Value>,
     {
-        let name = name.to_string();
-        let fun = Rc::new(move |args: &[Rc<Value>]| {
+        let fun = move |args: &[Rc<Value>]| {
             if !args.is_empty() {
                 Err(EvalError::ArgumentSize)
             } else {
                 let v = f();
                 Ok(Rc::new(v.into()))
             }
-        });
-        Value::Fun(FunData { name, fun })
+        };
+        Value::fun(name, fun)
     }
     pub fn fun1<F, T1, R>(name: &str, f: F) -> Value
     where
@@ -120,16 +125,15 @@ impl Value {
         T1: Extract,
         R: Into<Value>,
     {
-        let name = name.to_string();
-        let fun = Rc::new(move |args: &[Rc<Value>]| {
+        let fun = move |args: &[Rc<Value>]| {
             if args.len() != 1 {
                 return Err(EvalError::ArgumentSize);
             }
             let x1 = T1::extract(args[0].as_ref()).ok_or(EvalError::InvalidArg)?;
             let v = f(x1).into();
             Ok(Rc::new(v))
-        });
-        Value::Fun(FunData { name, fun })
+        };
+        Value::fun(name, fun)
     }
     pub fn fun2<F, T1, T2, R>(name: &str, f: F) -> Value
     where
@@ -138,8 +142,7 @@ impl Value {
         T2: Extract,
         R: Into<Value>,
     {
-        let name = name.to_string();
-        let fun = Rc::new(move |args: &[Rc<Value>]| {
+        let fun = move |args: &[Rc<Value>]| {
             if args.len() != 2 {
                 return Err(EvalError::ArgumentSize);
             }
@@ -147,16 +150,15 @@ impl Value {
             let x2 = T2::extract(args[1].as_ref()).ok_or(EvalError::InvalidArg)?;
             let v = f(x1, x2).into();
             Ok(Rc::new(v))
-        });
-        Value::Fun(FunData { name, fun })
+        };
+        Value::fun(name, fun)
     }
     pub fn fun_fold<F, T1>(name: &str, init: T1, f: F) -> Value
     where
         F: Fn(T1, T1) -> T1 + 'static,
         T1: Extract + Clone + Into<Value> + 'static,
     {
-        let name = name.to_string();
-        let fun = Rc::new(move |args: &[Rc<Value>]| {
+        let fun = move |args: &[Rc<Value>]| {
             let mut a = init.clone();
             for x in args.iter() {
                 match T1::extract(x) {
@@ -165,16 +167,15 @@ impl Value {
                 }
             }
             Ok(Rc::new(a.into()))
-        });
-        Value::Fun(FunData { name, fun })
+        };
+        Value::fun(name, fun)
     }
     pub fn fun_reduce<F, T1>(name: &str, f: F) -> Value
     where
         F: Fn(T1, T1) -> T1 + 'static,
         T1: Extract + Clone + Into<Value> + 'static,
     {
-        let name = name.to_string();
-        let fun = Rc::new(move |args: &[Rc<Value>]| {
+        let fun = move |args: &[Rc<Value>]| {
             let mut it = args.iter();
             let a = it.next().ok_or(EvalError::ArgumentSize)?;
             let a = T1::extract(a).ok_or(EvalError::InvalidArg)?;
@@ -186,8 +187,8 @@ impl Value {
                 }
             }
             Ok(Rc::new(a.into()))
-        });
-        Value::Fun(FunData { name, fun })
+        };
+        Value::fun(name, fun)
     }
 }
 

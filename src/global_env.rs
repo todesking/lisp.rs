@@ -62,10 +62,7 @@ impl GlobalEnv {
     where
         F: Fn(&[Rc<Value>]) -> Result<Rc<Value>, crate::eval::EvalError> + 'static,
     {
-        let value = Value::Fun(crate::value::FunData {
-            name: name.to_string(),
-            fun: Rc::new(f),
-        });
+        let value = Value::fun(name, f);
         let value = Rc::new(value);
         self.set(name.to_string(), value);
     }

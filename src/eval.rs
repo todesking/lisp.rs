@@ -34,8 +34,8 @@ fn eval_local(e: &Value, global: &mut GlobalEnv, local: Option<&Rc<LocalEnv>>) -
                 },
             )
             .ok_or_else(|| EvalError::VariableNotFound(key.to_string())),
-        Value::Lambda(_, _, _, _) => unimplemented!(),
-        Value::Fun(_) => unimplemented!(),
+        Value::Lambda { .. } => unimplemented!(),
+        Value::Fun { .. } => unimplemented!(),
         Value::Cons(car, cdr) => match car.as_ref() {
             Value::Sym(name) if name == "quote" => match cdr.as_ref().to_vec() {
                 None => Err(EvalError::ImproperArgs),
@@ -115,12 +115,12 @@ fn eval_lambda(
 ) -> Result {
     let param_names: Vec<String> = param_names.iter().map(|x| (*x).clone()).collect();
     let body: Vec<Rc<Value>> = body.to_vec();
-    Ok(Rc::new(Value::Lambda(
+    Ok(Rc::new(Value::Lambda {
         param_names,
-        rest_name.cloned(),
+        rest_name: rest_name.cloned(),
         body,
-        local.cloned(),
-    )))
+        env: local.cloned(),
+    }))
 }
 
 fn bind_args(
@@ -148,8 +148,13 @@ fn bind_args(
 
 fn eval_apply(f: &Rc<Value>, args: &[Rc<Value>], global: &mut GlobalEnv) -> Result {
     match f.as_ref() {
-        Value::Lambda(param_names, rest_name, body, parent) => {
-            let local = bind_args(param_names, rest_name.clone(), args, parent.clone())?;
+        Value::Lambda {
+            param_names,
+            rest_name,
+            body,
+            env,
+        } => {
+            let local = bind_args(param_names, rest_name.clone(), args, env.clone())?;
             let local = Rc::new(local);
             let mut e = Rc::new(Value::Nil);
             for b in body {
@@ -157,7 +162,7 @@ fn eval_apply(f: &Rc<Value>, args: &[Rc<Value>], global: &mut GlobalEnv) -> Resu
             }
             Ok(e)
         }
-        Value::Fun(crate::value::FunData { fun, .. }) => fun(args),
+        Value::Fun { fun, .. } => fun.0(args),
         _ => Err(EvalError::CantApply(f.clone())),
     }
 }
