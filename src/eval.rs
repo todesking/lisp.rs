@@ -261,14 +261,18 @@ mod test {
 
     trait Assertion {
         fn should_error(&self, err: EvalError);
-        fn should_ok(&self, value: Value);
+        fn should_ok<T: Into<Value>>(&self, value: T);
+        fn should_nil(&self);
     }
     impl Assertion for Result {
         fn should_error(&self, err: EvalError) {
             assert_eq!(self, &Err(err));
         }
-        fn should_ok(&self, value: Value) {
-            assert_eq!(self, &Ok(value));
+        fn should_ok<T: Into<Value>>(&self, value: T) {
+            assert_eq!(self, &Ok(value.into()));
+        }
+        fn should_nil(&self) {
+            self.should_ok(Value::nil());
         }
     }
 
@@ -285,7 +289,7 @@ mod test {
     #[test]
     fn test_num() {
         let mut env = GlobalEnv::new();
-        eval_str("1", &mut env).should_ok(1.into());
+        eval_str("1", &mut env).should_ok(1);
     }
 
     #[test]
@@ -293,7 +297,7 @@ mod test {
         let mut env = GlobalEnv::new();
         env.set("x".to_string(), 123.into());
 
-        eval_str("x", &mut env).should_ok(123.into());
+        eval_str("x", &mut env).should_ok(123);
     }
 
     #[test]
@@ -306,9 +310,9 @@ mod test {
     fn test_quote() {
         let mut env = GlobalEnv::new();
 
-        eval_str("'1", &mut env).should_ok(1.into());
-        eval_str("'(1 2)", &mut env).should_ok((&vec![1, 2]).into());
-        eval_str("(quote (1 2))", &mut env).should_ok((&vec![1, 2]).into());
+        eval_str("'1", &mut env).should_ok(1);
+        eval_str("'(1 2)", &mut env).should_ok(&vec![1, 2]);
+        eval_str("(quote (1 2))", &mut env).should_ok(&vec![1, 2]);
         eval_str("(quote 1 . 2)", &mut env).should_error(EvalError::ImproperArgs);
         eval_str("(quote . 1)", &mut env).should_error(EvalError::ImproperArgs);
         eval_str("(quote 1 2)", &mut env).should_error(EvalError::ArgumentSize);
@@ -320,10 +324,10 @@ mod test {
 
         eval_str("x", &mut env).should_error(EvalError::VariableNotFound("x".into()));
         eval_str("(define x 1)", &mut env).should_ok(Value::Nil);
-        eval_str("x", &mut env).should_ok(1.into());
+        eval_str("x", &mut env).should_ok(1);
 
         eval_str("(define x '1)", &mut env).should_ok(Value::Nil);
-        eval_str("x", &mut env).should_ok(1.into());
+        eval_str("x", &mut env).should_ok(1);
 
         eval_str("(define x 2 3)", &mut env).should_error(EvalError::ArgumentSize);
         eval_str("(define 1 2)", &mut env).should_error(EvalError::SymbolRequired);
@@ -345,18 +349,18 @@ mod test {
     fn test_lambda_simple() {
         let mut env = GlobalEnv::new();
 
-        eval_str("((lambda () 1))", &mut env).should_ok(1.into());
-        eval_str("((lambda (x) x) 1)", &mut env).should_ok(1.into());
+        eval_str("((lambda () 1))", &mut env).should_ok(1);
+        eval_str("((lambda (x) x) 1)", &mut env).should_ok(1);
         eval_str("((lambda (x y) x) 1)", &mut env).should_error(EvalError::ArgumentSize);
-        eval_str("((lambda (x y) y) 1 2)", &mut env).should_ok(2.into());
+        eval_str("((lambda (x y) y) 1 2)", &mut env).should_ok(2);
     }
 
     #[test]
     fn test_lambda_closure() {
         let mut env = GlobalEnv::new();
 
-        eval_str("(((lambda (x) (lambda (y) y)) 1) 2)", &mut env).should_ok(2.into());
-        eval_str("(((lambda (x) (lambda (y) x)) 1) 2)", &mut env).should_ok(1.into());
+        eval_str("(((lambda (x) (lambda (y) y)) 1) 2)", &mut env).should_ok(2);
+        eval_str("(((lambda (x) (lambda (y) x)) 1) 2)", &mut env).should_ok(1);
     }
 
     #[test]
@@ -369,9 +373,9 @@ mod test {
 
         eval_str("(define my-head (lambda (x . xs) x))", &mut env).should_ok(Value::Nil);
         eval_str("(define my-tail (lambda (x . xs) xs))", &mut env).should_ok(Value::Nil);
-        eval_str("(my-head 1)", &mut env).should_ok(1.into());
+        eval_str("(my-head 1)", &mut env).should_ok(1);
         eval_str("(my-tail 1)", &mut env).should_ok(list!());
-        eval_str("(my-head 1 2)", &mut env).should_ok(1.into());
+        eval_str("(my-head 1 2)", &mut env).should_ok(1);
         eval_str("(my-tail 1 2)", &mut env).should_ok(list!(2));
         eval_str("(my-head)", &mut env).should_error(EvalError::ArgumentSize);
     }
@@ -381,7 +385,7 @@ mod test {
         let mut env = GlobalEnv::new();
         env.set("x", 1.into());
 
-        eval_str("((lambda () x))", &mut env).should_ok(1.into());
+        eval_str("((lambda () x))", &mut env).should_ok(1);
     }
 
     #[test]
@@ -390,14 +394,14 @@ mod test {
         env.set("t", Value::Bool(true));
         env.set("f", Value::Bool(false));
 
-        eval_str("(if t 1 2)", &mut env).should_ok(1.into());
-        eval_str("(if f 1 2)", &mut env).should_ok(2.into());
+        eval_str("(if t 1 2)", &mut env).should_ok(1);
+        eval_str("(if f 1 2)", &mut env).should_ok(2);
 
         eval_str("(if t (define x 1) (define x 2))", &mut env).should_ok(Value::Nil);
-        eval_str("x", &mut env).should_ok(1.into());
+        eval_str("x", &mut env).should_ok(1);
 
         eval_str("(if f (define x 1) (define x 2))", &mut env).should_ok(Value::Nil);
-        eval_str("x", &mut env).should_ok(2.into());
+        eval_str("x", &mut env).should_ok(2);
     }
 
     #[test]
@@ -405,33 +409,33 @@ mod test {
         let mut env = GlobalEnv::new();
 
         env.set("f0", Value::fun0("f0", || 123));
-        eval_str("(f0)", &mut env).should_ok(123.into());
+        eval_str("(f0)", &mut env).should_ok(123);
         eval_str("(f0 1)", &mut env).should_error(EvalError::ArgumentSize);
 
         env.set("f1", Value::fun1("f1", |n: i32| n));
         eval_str("(f1)", &mut env).should_error(EvalError::ArgumentSize);
         eval_str("(f1 1 2)", &mut env).should_error(EvalError::ArgumentSize);
         eval_str("(f1 'a)", &mut env).should_error(EvalError::InvalidArg);
-        eval_str("(f1 1)", &mut env).should_ok(1.into());
+        eval_str("(f1 1)", &mut env).should_ok(1);
 
         env.set("f2", Value::fun2("f2", |n: i32, m: i32| n + m));
         eval_str("(f2)", &mut env).should_error(EvalError::ArgumentSize);
         eval_str("(f2 1)", &mut env).should_error(EvalError::ArgumentSize);
         eval_str("(f2 1 2 3)", &mut env).should_error(EvalError::ArgumentSize);
         eval_str("(f2 1 'a)", &mut env).should_error(EvalError::InvalidArg);
-        eval_str("(f2 1 2)", &mut env).should_ok(3.into());
+        eval_str("(f2 1 2)", &mut env).should_ok(3);
 
         env.set("sum", Value::fun_fold("sum", 0, |a, x| a + x));
-        eval_str("(sum)", &mut env).should_ok(0.into());
-        eval_str("(sum 1)", &mut env).should_ok(1.into());
-        eval_str("(sum 1 2)", &mut env).should_ok(3.into());
+        eval_str("(sum)", &mut env).should_ok(0);
+        eval_str("(sum 1)", &mut env).should_ok(1);
+        eval_str("(sum 1 2)", &mut env).should_ok(3);
         eval_str("(sum 'x)", &mut env).should_error(EvalError::InvalidArg);
 
         env.set("sum1", Value::fun_reduce("sum1", |a: i32, x: i32| a + x));
         eval_str("(sum1)", &mut env).should_error(EvalError::ArgumentSize);
         eval_str("(sum1 'x)", &mut env).should_error(EvalError::InvalidArg);
-        eval_str("(sum1 1)", &mut env).should_ok(1.into());
-        eval_str("(sum1 1 2)", &mut env).should_ok(3.into());
+        eval_str("(sum1 1)", &mut env).should_ok(1);
+        eval_str("(sum1 1 2)", &mut env).should_ok(3);
     }
 
     #[test]
@@ -447,25 +451,25 @@ mod test {
         let mut env = GlobalEnv::predef();
 
         eval_str("(+)", &mut env).should_error(EvalError::ArgumentSize);
-        eval_str("(+ 1)", &mut env).should_ok(1.into());
-        eval_str("(+ 1 2)", &mut env).should_ok(3.into());
+        eval_str("(+ 1)", &mut env).should_ok(1);
+        eval_str("(+ 1 2)", &mut env).should_ok(3);
 
         // TODO: (-) should accept >= 1 argument
         eval_str("(-)", &mut env).should_error(EvalError::ArgumentSize);
-        eval_str("(- 1)", &mut env).should_ok((-1).into());
-        eval_str("(- 3 8)", &mut env).should_ok((-5).into());
+        eval_str("(- 1)", &mut env).should_ok(-1);
+        eval_str("(- 3 8)", &mut env).should_ok(-5);
 
         eval_str("(*)", &mut env).should_error(EvalError::ArgumentSize);
-        eval_str("(* 1)", &mut env).should_ok(1.into());
-        eval_str("(* 1 2)", &mut env).should_ok(2.into());
+        eval_str("(* 1)", &mut env).should_ok(1);
+        eval_str("(* 1 2)", &mut env).should_ok(2);
 
         eval_str("(/)", &mut env).should_error(EvalError::ArgumentSize);
         eval_str("(/ 1)", &mut env).should_error(EvalError::ArgumentSize);
-        eval_str("(/ 4 2)", &mut env).should_ok(2.into());
+        eval_str("(/ 4 2)", &mut env).should_ok(2);
 
         eval_str("(%)", &mut env).should_error(EvalError::ArgumentSize);
         eval_str("(% 1)", &mut env).should_error(EvalError::ArgumentSize);
-        eval_str("(% 4 2)", &mut env).should_ok(0.into());
+        eval_str("(% 4 2)", &mut env).should_ok(0);
         // TODO: Floating point arithmetic
     }
 
@@ -473,13 +477,13 @@ mod test {
     fn test_predef_eq() {
         let mut env = GlobalEnv::predef();
 
-        eval_str("(eq? 1 1)", &mut env).should_ok(true.into());
-        eval_str("(eq? 1 2)", &mut env).should_ok(false.into());
+        eval_str("(eq? 1 1)", &mut env).should_ok(true);
+        eval_str("(eq? 1 2)", &mut env).should_ok(false);
 
-        eval_str("(eq? '(1 2 (3 4) . 5) '(1 2 (3 4) . 5))", &mut env).should_ok(true.into());
+        eval_str("(eq? '(1 2 (3 4) . 5) '(1 2 (3 4) . 5))", &mut env).should_ok(true);
 
-        eval_str("(eq? eq? eq?)", &mut env).should_ok(true.into());
-        eval_str("(eq? eq? +)", &mut env).should_ok(false.into());
+        eval_str("(eq? eq? eq?)", &mut env).should_ok(true);
+        eval_str("(eq? eq? +)", &mut env).should_ok(false);
     }
 
     #[test]
@@ -494,13 +498,13 @@ mod test {
                         (+ (fib (- n 1)) (fib (- n 2)))))))",
             &mut env,
         )
-        .should_ok(Value::Nil);
-        eval_str("(fib 0)", &mut env).should_ok(0.into());
-        eval_str("(fib 1)", &mut env).should_ok(1.into());
-        eval_str("(fib 2)", &mut env).should_ok(1.into());
-        eval_str("(fib 3)", &mut env).should_ok(2.into());
-        eval_str("(fib 4)", &mut env).should_ok(3.into());
-        eval_str("(fib 5)", &mut env).should_ok(5.into());
+        .should_nil();
+        eval_str("(fib 0)", &mut env).should_ok(0);
+        eval_str("(fib 1)", &mut env).should_ok(1);
+        eval_str("(fib 2)", &mut env).should_ok(1);
+        eval_str("(fib 3)", &mut env).should_ok(2);
+        eval_str("(fib 4)", &mut env).should_ok(3);
+        eval_str("(fib 5)", &mut env).should_ok(5);
     }
 
     #[test]
