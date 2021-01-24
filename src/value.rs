@@ -300,6 +300,15 @@ impl Extract for i32 {
     }
 }
 
+impl Extract for bool {
+    fn extract(x: &Value) -> Option<Self> {
+        match x {
+            Value::Bool(v) => Some(*v),
+            _ => None,
+        }
+    }
+}
+
 #[macro_export]
 macro_rules! list {
     () =>  { Value::Nil };

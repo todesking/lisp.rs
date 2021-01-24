@@ -2,6 +2,7 @@ use std::rc::Rc;
 
 use crate::global_env::GlobalEnv;
 use crate::local_env::LocalEnv;
+use crate::value::Extract;
 use crate::value::RefValue;
 use crate::value::Value;
 
@@ -91,12 +92,11 @@ fn eval_local(
                 Some(args) => match args.as_slice() {
                     [cond, th, el] => {
                         let cond = eval_local_loop(cond, global, local)?;
-                        match cond {
-                            Value::Bool(b) => {
-                                let value = if b { th } else { el };
-                                eval_local(value, global, local)
-                            }
-                            _ => Err(EvalError::InvalidArg),
+                        if let Some(b) = bool::extract(&cond) {
+                            let value = if b { th } else { el };
+                            eval_local(value, global, local)
+                        } else {
+                            Err(EvalError::InvalidArg)
                         }
                     }
                     _ => Err(EvalError::ArgumentSize),
