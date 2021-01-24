@@ -93,6 +93,13 @@ impl Value {
     pub fn is_nil(&self) -> bool {
         self == &Value::Nil
     }
+    pub fn is_cyclic_reference_safe(&self) -> bool {
+        match self {
+            Value::Cons(..) => false,
+            Value::Ref(..) => false,
+            _ => true,
+        }
+    }
     pub fn as_sym(&self) -> Option<&Rc<str>> {
         match self {
             Value::Sym(name) => Some(name),

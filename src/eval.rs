@@ -16,6 +16,7 @@ pub enum EvalError {
     SymbolRequired,
     InvalidArg,
     CantApply(Value, Box<[Value]>),
+    Unsafe,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -26,7 +27,11 @@ pub enum Ast {
     If(Box<Ast>, Box<Ast>, Box<Ast>),
     Lambda(Vec<Rc<str>>, Option<Rc<str>>, Rc<[Ast]>),
     Apply(Box<Ast>, Vec<Ast>),
-    SetLocal(String, Box<Ast>),
+    SetLocal {
+        name: String,
+        value: Box<Ast>,
+        safe_only: bool,
+    },
 }
 
 pub fn build_ast(expr: &Value) -> std::result::Result<Ast, EvalError> {
@@ -91,17 +96,10 @@ pub fn build_ast(expr: &Value) -> std::result::Result<Ast, EvalError> {
                 Value::Nil => Err(EvalError::ArgumentSize),
                 _ => Err(EvalError::ImproperArgs),
             },
-            Value::Sym(name) if name.as_ref() == "set-local!" => match cdr.to_vec() {
-                None => Err(EvalError::ImproperArgs),
-                Some(args) => match args.as_slice() {
-                    [name, expr] => {
-                        let name = name.as_ref().as_sym().ok_or(EvalError::SymbolRequired)?;
-                        let expr = build_ast(expr)?;
-                        Ok(Ast::SetLocal(name.to_string(), Box::new(expr)))
-                    }
-                    _ => Err(EvalError::ArgumentSize),
-                },
-            },
+            Value::Sym(name) if name.as_ref() == "set-local!" => build_ast_set_local(cdr, true),
+            Value::Sym(name) if name.as_ref() == "unsafe-set-local!" => {
+                build_ast_set_local(cdr, false)
+            }
             f => match cdr.to_vec() {
                 None => Err(EvalError::ImproperArgs),
                 Some(args) => {
@@ -118,6 +116,26 @@ pub fn build_ast(expr: &Value) -> std::result::Result<Ast, EvalError> {
         Value::Ref(r) => match r.as_ref() {
             RefValue::Lambda { .. } => unimplemented!(),
             RefValue::Fun { .. } => unimplemented!(),
+        },
+    }
+}
+
+fn build_ast_set_local(expr: &Value, safe_only: bool) -> std::result::Result<Ast, EvalError> {
+    match expr.to_vec() {
+        None => Err(EvalError::ImproperArgs),
+        Some(args) => match args.as_slice() {
+            [name, value] => {
+                let name = name.as_ref().as_sym().ok_or(EvalError::SymbolRequired)?;
+                let name = name.to_string();
+                let value = build_ast(value)?;
+                let value = Box::new(value);
+                Ok(Ast::SetLocal {
+                    name,
+                    value,
+                    safe_only,
+                })
+            }
+            _ => Err(EvalError::ArgumentSize),
         },
     }
 }
@@ -203,8 +221,15 @@ fn eval_local(
             }
             Cont::ok_cont(f, arg_values)
         }
-        Ast::SetLocal(name, value) => {
+        Ast::SetLocal {
+            name,
+            value,
+            safe_only,
+        } => {
             let value = eval_local_loop(value, global, local)?;
+            if *safe_only && !value.is_cyclic_reference_safe() {
+                return Err(EvalError::Unsafe);
+            }
             local.map_or_else(
                 || Err(EvalError::VariableNotFound(name.clone())),
                 |l| {
@@ -559,6 +584,24 @@ mod test {
 
     #[test]
     fn test_set_local() {
+        let env = &mut GlobalEnv::predef();
+        eval_str("(define global-var 1)", env).should_nil();
+
+        eval_str("((lambda (x) (set-local! x 2) x) 1)", env).should_ok(2);
+        eval_str("((lambda (x) (set-local! unk 1)) 1)", env)
+            .should_error(EvalError::VariableNotFound("unk".into()));
+        eval_str("((lambda (x) (set-local! global-var 1)) 1)", env)
+            .should_error(EvalError::VariableNotFound("global-var".into()));
+
+        eval_str("(((lambda (x) (lambda (y) (set-local! x 42) x)) 1) 2)", env).should_ok(42);
+
+        eval_str("((lambda (x) (set-local! x '(1 2 3)) x) 1)", env).should_error(EvalError::Unsafe);
+        eval_str("((lambda (x) (unsafe-set-local! x '(1 2 3)) x) 1)", env)
+            .should_ok(list![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_set_local_counter() {
         let env = &mut GlobalEnv::predef();
 
         eval_str(
