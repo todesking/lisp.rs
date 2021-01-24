@@ -18,14 +18,42 @@ pub enum EvalError {
 pub type Result = std::result::Result<Value, EvalError>;
 
 pub fn eval(e: &Value, global: &mut GlobalEnv) -> Result {
-    eval_local(e, global, None)
+    eval_local_loop(e, global, None)
 }
 
-fn eval_local(e: &Value, global: &mut GlobalEnv, local: Option<&Rc<LocalEnv>>) -> Result {
+enum Cont {
+    Ret(Value),
+    Cont(Value, Vec<Value>),
+}
+
+impl Cont {
+    fn ok_ret(v: Value) -> std::result::Result<Cont, EvalError> {
+        Ok(Cont::Ret(v))
+    }
+    fn ok_cont(f: Value, args: Vec<Value>) -> std::result::Result<Cont, EvalError> {
+        Ok(Cont::Cont(f, args))
+    }
+}
+
+fn eval_local_loop(e: &Value, global: &mut GlobalEnv, local: Option<&Rc<LocalEnv>>) -> Result {
+    let mut res = eval_local(e, global, local)?;
+    loop {
+        match res {
+            Cont::Ret(v) => return Ok(v),
+            Cont::Cont(f, args) => res = eval_apply(&f, args.as_ref(), global)?,
+        }
+    }
+}
+
+fn eval_local(
+    e: &Value,
+    global: &mut GlobalEnv,
+    local: Option<&Rc<LocalEnv>>,
+) -> std::result::Result<Cont, EvalError> {
     match e {
-        Value::Int(n) => Ok(Value::int(*n)),
-        Value::Bool(v) => Ok(Value::bool(*v)),
-        Value::Nil => Ok(Value::nil()),
+        Value::Int(n) => Cont::ok_ret(Value::int(*n)),
+        Value::Bool(v) => Cont::ok_ret(Value::bool(*v)),
+        Value::Nil => Cont::ok_ret(Value::nil()),
         Value::Sym(key) => local
             .map_or_else(
                 || global.lookup(key),
@@ -34,12 +62,13 @@ fn eval_local(e: &Value, global: &mut GlobalEnv, local: Option<&Rc<LocalEnv>>) -
                     found @ Some(_) => found,
                 },
             )
+            .map(Cont::Ret)
             .ok_or_else(|| EvalError::VariableNotFound(key.to_string())),
         Value::Cons(car, cdr) => match car.as_ref() {
             Value::Sym(name) if name == "quote" => match cdr.as_ref().to_vec() {
                 None => Err(EvalError::ImproperArgs),
                 Some(args) => match args.as_slice() {
-                    [x] => Ok(x.as_ref().clone()),
+                    [x] => Cont::ok_ret(x.as_ref().clone()),
                     _ => Err(EvalError::ArgumentSize),
                 },
             },
@@ -48,9 +77,9 @@ fn eval_local(e: &Value, global: &mut GlobalEnv, local: Option<&Rc<LocalEnv>>) -
                 Some(args) => match args.as_slice() {
                     [name, value] => match name.as_ref() {
                         Value::Sym(name) => {
-                            let value = eval_local(value, global, local)?;
+                            let value = eval_local_loop(value, global, local)?;
                             global.set(name, value);
-                            Ok(Value::nil())
+                            Cont::ok_ret(Value::nil())
                         }
                         _ => Err(EvalError::SymbolRequired),
                     },
@@ -61,7 +90,7 @@ fn eval_local(e: &Value, global: &mut GlobalEnv, local: Option<&Rc<LocalEnv>>) -
                 None => Err(EvalError::ImproperArgs),
                 Some(args) => match args.as_slice() {
                     [cond, th, el] => {
-                        let cond = eval_local(cond, global, local)?;
+                        let cond = eval_local_loop(cond, global, local)?;
                         match cond {
                             Value::Bool(b) => {
                                 let value = if b { th } else { el };
@@ -93,13 +122,13 @@ fn eval_local(e: &Value, global: &mut GlobalEnv, local: Option<&Rc<LocalEnv>>) -
             f => match cdr.to_vec() {
                 None => Err(EvalError::ImproperArgs),
                 Some(args) => {
-                    let f = eval_local(f, global, local)?;
+                    let f = eval_local_loop(f, global, local)?;
                     let mut arg_values = vec![];
                     for arg in args.iter() {
-                        let a = eval_local(arg, global, local)?;
+                        let a = eval_local_loop(arg, global, local)?;
                         arg_values.push(a);
                     }
-                    eval_apply(&f, &arg_values, global)
+                    Cont::ok_cont(f, arg_values)
                 }
             },
         },
@@ -115,9 +144,9 @@ fn eval_lambda(
     rest_name: Option<&String>,
     body: &[Rc<Value>],
     local: Option<&Rc<LocalEnv>>,
-) -> Result {
+) -> std::result::Result<Cont, EvalError> {
     let param_names: Vec<String> = param_names.iter().map(|x| (*x).clone()).collect();
-    Ok(Value::lambda(
+    Cont::ok_ret(Value::lambda(
         param_names,
         rest_name.cloned(),
         body.iter().map(|v| v.as_ref().clone()).collect(),
@@ -148,7 +177,11 @@ fn bind_args(
     }
 }
 
-fn eval_apply(f: &Value, args: &[Value], global: &mut GlobalEnv) -> Result {
+fn eval_apply(
+    f: &Value,
+    args: &[Value],
+    global: &mut GlobalEnv,
+) -> std::result::Result<Cont, EvalError> {
     match f {
         Value::Ref(r) => match r.as_ref() {
             RefValue::Lambda {
@@ -159,13 +192,16 @@ fn eval_apply(f: &Value, args: &[Value], global: &mut GlobalEnv) -> Result {
             } => {
                 let local = bind_args(param_names, rest_name.clone(), args, env.clone())?;
                 let local = Rc::new(local);
-                let mut e = Value::nil();
-                for b in body {
-                    e = eval_local(b, global, Some(&local))?;
+                let mut e = Cont::Ret(Value::nil());
+                if let Some((last, heads)) = body.split_last() {
+                    for b in heads {
+                        eval_local_loop(b, global, Some(&local))?;
+                    }
+                    e = eval_local(last, global, Some(&local))?;
                 }
                 Ok(e)
             }
-            RefValue::Fun { fun, .. } => fun.0(args),
+            RefValue::Fun { fun, .. } => fun.0(args).map(Cont::Ret),
         },
         _ => Err(EvalError::CantApply(f.clone())),
     }
@@ -422,5 +458,21 @@ mod test {
         eval_str("(fib 3)", &mut env).should_ok(2.into());
         eval_str("(fib 4)", &mut env).should_ok(3.into());
         eval_str("(fib 5)", &mut env).should_ok(5.into());
+    }
+
+    #[test]
+    fn test_tco() {
+        let env = &mut GlobalEnv::predef();
+
+        eval_str(
+            "
+        (define loop (lambda (n)
+            (if (eq? n 0)
+                42
+                (loop (- n 1)))))",
+            env,
+        )
+        .should_ok(Value::nil());
+        eval_str("(loop 100000)", env).should_ok(Value::int(42));
     }
 }
