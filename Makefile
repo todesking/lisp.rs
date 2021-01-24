@@ -1,6 +1,6 @@
-.PHONY: all check fix clippy test clean bench build help
+.PHONY: all check fix clippy test clean bench build help memtest
 
-all: fix clippy test
+all: fix clippy test memtest
 
 fix: check
 	cargo fmt && cargo fix --allow-dirty --allow-staged
@@ -13,6 +13,9 @@ check:
 
 test: check
 	RUST_BACKTRACE=1 cargo test
+
+memtest:
+	RUSTFLAGS="-Z sanitizer=leak" cargo +nightly run  --example memory_test
 
 clean:
 	cargo clean
