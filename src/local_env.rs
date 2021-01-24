@@ -3,13 +3,13 @@ use std::rc::Rc;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct LocalEnv {
-    values: std::collections::HashMap<String, Value>,
+    values: std::collections::HashMap<Rc<str>, Value>,
     parent: Option<Rc<LocalEnv>>,
 }
 
 impl LocalEnv {
     pub fn new(
-        values: std::collections::HashMap<String, Value>,
+        values: std::collections::HashMap<Rc<str>, Value>,
         parent: Option<Rc<LocalEnv>>,
     ) -> LocalEnv {
         LocalEnv { values, parent }

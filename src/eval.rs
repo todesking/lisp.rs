@@ -65,20 +65,20 @@ fn eval_local(
             .map(Cont::Ret)
             .ok_or_else(|| EvalError::VariableNotFound(key.to_string())),
         Value::Cons(car, cdr) => match car.as_ref() {
-            Value::Sym(name) if name == "quote" => match cdr.as_ref().to_vec() {
+            Value::Sym(name) if name.as_ref() == "quote" => match cdr.as_ref().to_vec() {
                 None => Err(EvalError::ImproperArgs),
                 Some(args) => match args.as_slice() {
                     [x] => Cont::ok_ret(x.as_ref().clone()),
                     _ => Err(EvalError::ArgumentSize),
                 },
             },
-            Value::Sym(name) if name == "define" => match cdr.to_vec() {
+            Value::Sym(name) if name.as_ref() == "define" => match cdr.to_vec() {
                 None => Err(EvalError::ImproperArgs),
                 Some(args) => match args.as_slice() {
                     [name, value] => match name.as_ref() {
                         Value::Sym(name) => {
                             let value = eval_local_loop(value, global, local)?;
-                            global.set(name, value);
+                            global.set(name.as_ref(), value);
                             Cont::ok_ret(Value::nil())
                         }
                         _ => Err(EvalError::SymbolRequired),
@@ -86,7 +86,7 @@ fn eval_local(
                     _ => Err(EvalError::ArgumentSize),
                 },
             },
-            Value::Sym(name) if name == "if" => match cdr.to_vec() {
+            Value::Sym(name) if name.as_ref() == "if" => match cdr.to_vec() {
                 None => Err(EvalError::ImproperArgs),
                 Some(args) => match args.as_slice() {
                     [cond, th, el] => {
@@ -102,17 +102,17 @@ fn eval_local(
                     _ => Err(EvalError::ArgumentSize),
                 },
             },
-            Value::Sym(name) if name == "lambda" => match cdr.as_ref() {
+            Value::Sym(name) if name.as_ref() == "lambda" => match cdr.as_ref() {
                 Value::Cons(params, body) => {
                     let (param_names, rest_name) = params.collect_improper(|v| match v {
-                        Value::Sym(name) => Ok(name),
+                        Value::Sym(name) => Ok(name.clone()),
                         _ => Err(EvalError::SymbolRequired),
                     })?;
                     match body.to_vec() {
                         None => Err(EvalError::ImproperArgs),
                         Some(body) => match body.as_slice() {
                             [] => Err(EvalError::ArgumentSize),
-                            body => eval_lambda(&param_names, rest_name, body, local),
+                            body => eval_lambda(param_names, rest_name, body, local),
                         },
                     }
                 }
@@ -140,23 +140,22 @@ fn eval_local(
 }
 
 fn eval_lambda(
-    param_names: &[&String],
-    rest_name: Option<&String>,
+    param_names: Vec<Rc<str>>,
+    rest_name: Option<Rc<str>>,
     body: &[Rc<Value>],
     local: Option<&Rc<LocalEnv>>,
 ) -> std::result::Result<Cont, EvalError> {
-    let param_names: Vec<String> = param_names.iter().map(|x| (*x).clone()).collect();
     Cont::ok_ret(Value::lambda(
         param_names,
-        rest_name.cloned(),
+        rest_name,
         body.iter().map(|v| v.as_ref().clone()).collect(),
         local.cloned(),
     ))
 }
 
 fn bind_args(
-    param_names: &[String],
-    rest_name: Option<String>,
+    param_names: &[Rc<str>],
+    rest_name: Option<Rc<str>>,
     args: &[Value],
     parent: Option<Rc<LocalEnv>>,
 ) -> std::result::Result<LocalEnv, EvalError> {

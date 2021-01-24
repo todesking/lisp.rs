@@ -7,7 +7,7 @@ use std::rc::Rc;
 pub enum Value {
     Bool(bool),
     Int(i32),
-    Sym(String),
+    Sym(Rc<str>),
     Nil,
     Cons(Rc<Value>, Rc<Value>),
     Ref(Rc<RefValue>),
@@ -18,8 +18,8 @@ pub enum Value {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RefValue {
     Lambda {
-        param_names: Vec<String>,
-        rest_name: Option<String>,
+        param_names: Vec<Rc<str>>,
+        rest_name: Option<Rc<str>>,
         body: Vec<Value>,
         env: Option<Rc<LocalEnv>>,
     },
@@ -60,8 +60,8 @@ impl Value {
     pub fn cons<T1: Into<Value>, T2: Into<Value>>(car: T1, cdr: T2) -> Value {
         Value::Cons(Rc::new(car.into()), Rc::new(cdr.into()))
     }
-    pub fn sym<S: Into<String>>(name: S) -> Value {
-        Value::Sym(name.into())
+    pub fn sym(name: &str) -> Value {
+        Value::Sym(Rc::from(name))
     }
     pub fn fun<F>(name: &str, f: F) -> Value
     where
@@ -76,8 +76,8 @@ impl Value {
         Value::Ref(Rc::new(v))
     }
     pub fn lambda(
-        param_names: Vec<String>,
-        rest_name: Option<String>,
+        param_names: Vec<Rc<str>>,
+        rest_name: Option<Rc<str>>,
         body: Vec<Value>,
         env: Option<Rc<LocalEnv>>,
     ) -> Value {
