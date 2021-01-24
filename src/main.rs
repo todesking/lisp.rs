@@ -44,19 +44,12 @@ fn main() -> io::Result<()> {
 }
 
 fn load_cli_env(global: &mut GlobalEnv) {
-    fn define(global: &mut GlobalEnv, name: &str, src: &str) {
-        let expr = lisprs::parse(src).expect(name);
-        let value = lisprs::eval(&expr, global).expect(name);
-        global.set(name, value);
-    }
-    define(
-        global,
-        "fib",
-        "
-        (lambda (n)
+    lisprs::eval_str_or_panic(
+        "(define fib (lambda (n)
             (if (eq? n 0) 0
                 (if (eq? n 1) 1
-                    (+ (fib (- n 1)) (fib (- n 2))))))",
+                    (+ (fib (- n 1)) (fib (- n 2)))))))",
+        global,
     );
 }
 
