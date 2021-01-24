@@ -106,22 +106,22 @@ impl Value {
             _ => None,
         }
     }
-    pub fn to_vec(&self) -> Option<Vec<Rc<Value>>> {
-        // TODO: refactor to use collect_improper()
-        if self.is_nil() {
-            return Some(vec![]);
+    pub fn to_vec(&self) -> Option<Vec<&Value>> {
+        let (values, tail) = self.to_improper_vec();
+        if tail.is_nil() {
+            Some(values)
+        } else {
+            None
         }
-
+    }
+    pub fn to_improper_vec(&self) -> (Vec<&Value>, &Value) {
         let mut rest = self;
         let mut values = Vec::new();
         while let Value::Cons(car, cdr) = rest {
-            rest = cdr;
-            values.push(car.clone());
+            rest = cdr.as_ref();
+            values.push(car.as_ref());
         }
-        match rest {
-            Value::Nil => Some(values),
-            _ => None,
-        }
+        (values, rest)
     }
     pub fn collect_improper<'a, F, T, E>(
         &'a self,
@@ -238,6 +238,66 @@ impl Value {
     }
 }
 
+impl std::fmt::Display for Value {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        match self {
+            Value::Int(v) => fmt.write_fmt(format_args!("{}", v)),
+            Value::Bool(v) => fmt.write_fmt(format_args!("{}", v)),
+            Value::Sym(v) => fmt.write_str(v.as_ref()),
+            Value::Cons(..) | Value::Nil => {
+                fmt.write_str("(")?;
+                let (heads, tail) = self.to_improper_vec();
+                if let Some((last, heads)) = heads.split_last() {
+                    for x in heads {
+                        fmt.write_fmt(format_args!("{}", x))?;
+                        fmt.write_str(" ")?;
+                    }
+                    fmt.write_fmt(format_args!("{}", last))?;
+                    if !tail.is_nil() {
+                        fmt.write_str(" . ")?;
+                        fmt.write_fmt(format_args!("{}", tail))?;
+                    }
+                }
+                fmt.write_str(")")?;
+                Ok(())
+            }
+            Value::Ref(r) => fmt.write_fmt(format_args!("{}", r)),
+        }
+    }
+}
+
+impl std::fmt::Display for RefValue {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        match self {
+            RefValue::Lambda {
+                param_names,
+                rest_name,
+                ..
+            } => {
+                fmt.write_str("#<lambda")?;
+                if let Some((last_param, param_names)) = param_names.split_last() {
+                    fmt.write_str(" ")?;
+                    for p in param_names {
+                        fmt.write_str(p)?;
+                        fmt.write_str(" ")?;
+                    }
+                    fmt.write_str(last_param)?;
+                }
+                for r in rest_name {
+                    fmt.write_str(" . ")?;
+                    fmt.write_str(r)?;
+                }
+                fmt.write_str(">")
+            }
+            RefValue::Fun { name, .. } => {
+                fmt.write_str("#<primitive:")?;
+                fmt.write_str(name)?;
+                fmt.write_str(">")
+            }
+        }
+    }
+}
+
 pub trait ToValue {
     fn to_value(self) -> Value;
 }
@@ -329,4 +389,34 @@ macro_rules! list {
     () =>  { Value::Nil };
     ($x: expr) => { Value::cons(Value::from($x), Value::Nil) };
     ($x: expr, $($xs: expr),+) => { Value::cons(Value::from($x), list!($($xs),+)) };
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_display() {
+        assert_eq!(Value::int(42).to_string(), "42");
+        assert_eq!(Value::bool(true).to_string(), "true");
+        assert_eq!(Value::sym("foo").to_string(), "foo");
+        assert_eq!(Value::nil().to_string(), "()");
+        assert_eq!(list![1, 2, 3].to_string(), "(1 2 3)");
+        assert_eq!(Value::cons(1, Value::cons(2, 3)).to_string(), "(1 2 . 3)");
+        assert_eq!(list![list![1, 2], 3].to_string(), "((1 2) 3)");
+        assert_eq!(
+            Value::lambda(
+                vec![Rc::from("x")],
+                Some(Rc::from("rest")),
+                Vec::<Ast>::new().into_iter().collect::<Rc<[Ast]>>(),
+                None
+            )
+            .to_string(),
+            "#<lambda x . rest>"
+        );
+        assert_eq!(
+            Value::fun("f", |_| Ok(Value::nil())).to_string(),
+            "#<primitive:f>"
+        );
+    }
 }

@@ -44,14 +44,14 @@ pub fn build_ast(expr: &Value) -> std::result::Result<Ast, EvalError> {
             Value::Sym(name) if name.as_ref() == "quote" => match cdr.as_ref().to_vec() {
                 None => Err(EvalError::ImproperArgs),
                 Some(args) => match args.as_slice() {
-                    [x] => Ok(Ast::Const(x.as_ref().clone())),
+                    [x] => Ok(Ast::Const((*x).clone())),
                     _ => Err(EvalError::ArgumentSize),
                 },
             },
             Value::Sym(name) if name.as_ref() == "define" => match cdr.to_vec() {
                 None => Err(EvalError::ImproperArgs),
                 Some(args) => match args.as_slice() {
-                    [name, value] => match name.as_ref() {
+                    [name, value] => match name {
                         Value::Sym(name) => {
                             let value = build_ast(value)?;
                             Ok(Ast::Define(name.to_string(), Box::new(value)))
@@ -84,10 +84,10 @@ pub fn build_ast(expr: &Value) -> std::result::Result<Ast, EvalError> {
                         Some(body) => match body.as_slice() {
                             [] => Err(EvalError::ArgumentSize),
                             body => {
-                                let body =
-                                    body.iter()
-                                        .map(|v| build_ast(v.as_ref()))
-                                        .collect::<std::result::Result<Rc<[Ast]>, EvalError>>()?;
+                                let body = body
+                                    .iter()
+                                    .map(|v| build_ast(v))
+                                    .collect::<std::result::Result<Rc<[Ast]>, EvalError>>()?;
                                 Ok(Ast::Lambda(param_names, rest_name, body))
                             }
                         },
@@ -125,7 +125,7 @@ fn build_ast_set_local(expr: &Value, safe_only: bool) -> std::result::Result<Ast
         None => Err(EvalError::ImproperArgs),
         Some(args) => match args.as_slice() {
             [name, value] => {
-                let name = name.as_ref().as_sym().ok_or(EvalError::SymbolRequired)?;
+                let name = name.as_sym().ok_or(EvalError::SymbolRequired)?;
                 let name = name.to_string();
                 let value = build_ast(value)?;
                 let value = Box::new(value);
