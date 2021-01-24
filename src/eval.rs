@@ -6,6 +6,8 @@ use crate::value::Extract;
 use crate::value::RefValue;
 use crate::value::Value;
 
+use std::cell::RefCell;
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum EvalError {
     VariableNotFound(String),
@@ -13,7 +15,7 @@ pub enum EvalError {
     ArgumentSize,
     SymbolRequired,
     InvalidArg,
-    CantApply(Value),
+    CantApply(Value, Box<[Value]>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -24,6 +26,7 @@ pub enum Ast {
     If(Box<Ast>, Box<Ast>, Box<Ast>),
     Lambda(Vec<Rc<str>>, Option<Rc<str>>, Rc<[Ast]>),
     Apply(Box<Ast>, Vec<Ast>),
+    SetLocal(String, Box<Ast>),
 }
 
 pub fn build_ast(expr: &Value) -> std::result::Result<Ast, EvalError> {
@@ -88,6 +91,17 @@ pub fn build_ast(expr: &Value) -> std::result::Result<Ast, EvalError> {
                 Value::Nil => Err(EvalError::ArgumentSize),
                 _ => Err(EvalError::ImproperArgs),
             },
+            Value::Sym(name) if name.as_ref() == "set-local!" => match cdr.to_vec() {
+                None => Err(EvalError::ImproperArgs),
+                Some(args) => match args.as_slice() {
+                    [name, expr] => {
+                        let name = name.as_ref().as_sym().ok_or(EvalError::SymbolRequired)?;
+                        let expr = build_ast(expr)?;
+                        Ok(Ast::SetLocal(name.to_string(), Box::new(expr)))
+                    }
+                    _ => Err(EvalError::ArgumentSize),
+                },
+            },
             f => match cdr.to_vec() {
                 None => Err(EvalError::ImproperArgs),
                 Some(args) => {
@@ -129,7 +143,11 @@ impl Cont {
     }
 }
 
-fn eval_local_loop(ast: &Ast, global: &mut GlobalEnv, local: Option<&Rc<LocalEnv>>) -> Result {
+fn eval_local_loop(
+    ast: &Ast,
+    global: &mut GlobalEnv,
+    local: Option<&Rc<RefCell<LocalEnv>>>,
+) -> Result {
     let mut res = eval_local(ast, global, local)?;
     loop {
         match res {
@@ -142,14 +160,14 @@ fn eval_local_loop(ast: &Ast, global: &mut GlobalEnv, local: Option<&Rc<LocalEnv
 fn eval_local(
     ast: &Ast,
     global: &mut GlobalEnv,
-    local: Option<&Rc<LocalEnv>>,
+    local: Option<&Rc<RefCell<LocalEnv>>>,
 ) -> std::result::Result<Cont, EvalError> {
     match ast {
         Ast::Const(v) => Cont::ok_ret(v.clone()),
         Ast::Lookup(key) => local
             .map_or_else(
                 || global.lookup(key),
-                |l| match l.lookup(key) {
+                |l| match l.borrow().lookup(key) {
                     None => global.lookup(key),
                     found @ Some(_) => found,
                 },
@@ -185,6 +203,19 @@ fn eval_local(
             }
             Cont::ok_cont(f, arg_values)
         }
+        Ast::SetLocal(name, value) => {
+            let value = eval_local_loop(value, global, local)?;
+            local.map_or_else(
+                || Err(EvalError::VariableNotFound(name.clone())),
+                |l| {
+                    if l.borrow_mut().set_if_defined(name, value) {
+                        Cont::ok_ret(Value::nil())
+                    } else {
+                        Err(EvalError::VariableNotFound(name.clone()))
+                    }
+                },
+            )
+        }
     }
 }
 
@@ -192,7 +223,7 @@ fn eval_lambda(
     param_names: Vec<Rc<str>>,
     rest_name: Option<Rc<str>>,
     body: Rc<[Ast]>,
-    local: Option<Rc<LocalEnv>>,
+    local: Option<Rc<RefCell<LocalEnv>>>,
 ) -> std::result::Result<Cont, EvalError> {
     Cont::ok_ret(Value::lambda(param_names, rest_name, body, local))
 }
@@ -201,7 +232,7 @@ fn bind_args(
     param_names: &[Rc<str>],
     rest_name: Option<Rc<str>>,
     args: &[Value],
-    parent: Option<Rc<LocalEnv>>,
+    parent: Option<Rc<RefCell<LocalEnv>>>,
 ) -> std::result::Result<LocalEnv, EvalError> {
     let invalid_argument_size = (rest_name.is_none() && param_names.len() != args.len())
         || (rest_name.is_some() && param_names.len() > args.len());
@@ -234,7 +265,7 @@ fn eval_apply(
                 env,
             } => {
                 let local = bind_args(param_names, rest_name.clone(), args, env.clone())?;
-                let local = Rc::new(local);
+                let local = Rc::new(RefCell::new(local));
                 let mut e = Cont::Ret(Value::nil());
                 if let Some((last, heads)) = body.split_last() {
                     for b in heads {
@@ -246,7 +277,10 @@ fn eval_apply(
             }
             RefValue::Fun { fun, .. } => fun.0(args).map(Cont::Ret),
         },
-        _ => Err(EvalError::CantApply(f.clone())),
+        _ => Err(EvalError::CantApply(
+            f.clone(),
+            args.iter().cloned().collect(),
+        )),
     }
 }
 
@@ -521,5 +555,34 @@ mod test {
         )
         .should_ok(Value::nil());
         eval_str("(loop 100000)", env).should_ok(Value::int(42));
+    }
+
+    #[test]
+    fn test_set_local() {
+        let env = &mut GlobalEnv::predef();
+
+        eval_str(
+            "
+        (define make-counter
+            (lambda ()
+                ((lambda (c)
+                    (lambda ()
+                        (set-local! c (+ c 1))
+                        (- c 1)))
+                  0)))",
+            env,
+        )
+        .should_nil();
+        eval_str("(define c1 (make-counter))", env).should_nil();
+        eval_str("(define c2 (make-counter))", env).should_nil();
+
+        eval_str("(c1)", env).should_ok(0);
+
+        eval_str("(c2)", env).should_ok(0);
+
+        eval_str("(c1)", env).should_ok(1);
+        eval_str("(c1)", env).should_ok(2);
+
+        eval_str("(c2)", env).should_ok(1);
     }
 }

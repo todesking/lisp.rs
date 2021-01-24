@@ -2,6 +2,7 @@ use crate::eval::Ast;
 use crate::eval::EvalError;
 use crate::eval::Result;
 use crate::local_env::LocalEnv;
+use std::cell::RefCell;
 use std::rc::Rc;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -22,7 +23,7 @@ pub enum RefValue {
         param_names: Vec<Rc<str>>,
         rest_name: Option<Rc<str>>,
         body: Rc<[Ast]>,
-        env: Option<Rc<LocalEnv>>,
+        env: Option<Rc<RefCell<LocalEnv>>>,
     },
     Fun {
         name: String,
@@ -80,7 +81,7 @@ impl Value {
         param_names: Vec<Rc<str>>,
         rest_name: Option<Rc<str>>,
         body: Rc<[Ast]>,
-        env: Option<Rc<LocalEnv>>,
+        env: Option<Rc<RefCell<LocalEnv>>>,
     ) -> Value {
         Value::ref_value(RefValue::Lambda {
             param_names,
@@ -91,6 +92,12 @@ impl Value {
     }
     pub fn is_nil(&self) -> bool {
         self == &Value::Nil
+    }
+    pub fn as_sym(&self) -> Option<&Rc<str>> {
+        match self {
+            Value::Sym(name) => Some(name),
+            _ => None,
+        }
     }
     pub fn to_vec(&self) -> Option<Vec<Rc<Value>>> {
         // TODO: refactor to use collect_improper()
