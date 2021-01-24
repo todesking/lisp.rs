@@ -37,6 +37,13 @@ fn main() -> io::Result<()> {
                 ctx.show_raw_input = !ctx.show_raw_input;
                 println!("show_raw_input = {}", ctx.show_raw_input);
             }
+            ":ls" => {
+                let mut keys = global.ls().collect::<Vec<_>>();
+                keys.sort_unstable();
+                for key in keys {
+                    println!("{}", key);
+                }
+            }
             src => read_eval_print(src, &mut parser, &mut global, &ctx),
         }
     }

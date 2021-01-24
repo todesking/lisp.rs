@@ -80,4 +80,7 @@ impl GlobalEnv {
         let value = Value::fun(name, f);
         self.set(name.to_string(), value);
     }
+    pub fn ls(&self) -> impl Iterator<Item = &str> {
+        self.values.keys().map(|s| s.as_ref())
+    }
 }
