@@ -16,10 +16,103 @@ pub enum EvalError {
     CantApply(Value),
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Ast {
+    Const(Value),
+    Define(String, Box<Ast>),
+    Lookup(String),
+    If(Box<Ast>, Box<Ast>, Box<Ast>),
+    Lambda(Vec<Rc<str>>, Option<Rc<str>>, Rc<[Ast]>),
+    Apply(Box<Ast>, Vec<Ast>),
+}
+
+pub fn build_ast(expr: &Value) -> std::result::Result<Ast, EvalError> {
+    match expr {
+        Value::Int(n) => Ok(Ast::Const(Value::int(*n))),
+        Value::Bool(v) => Ok(Ast::Const(Value::bool(*v))),
+        Value::Nil => Ok(Ast::Const(Value::nil())),
+        Value::Sym(key) => Ok(Ast::Lookup(key.to_string())),
+        Value::Cons(car, cdr) => match car.as_ref() {
+            Value::Sym(name) if name.as_ref() == "quote" => match cdr.as_ref().to_vec() {
+                None => Err(EvalError::ImproperArgs),
+                Some(args) => match args.as_slice() {
+                    [x] => Ok(Ast::Const(x.as_ref().clone())),
+                    _ => Err(EvalError::ArgumentSize),
+                },
+            },
+            Value::Sym(name) if name.as_ref() == "define" => match cdr.to_vec() {
+                None => Err(EvalError::ImproperArgs),
+                Some(args) => match args.as_slice() {
+                    [name, value] => match name.as_ref() {
+                        Value::Sym(name) => {
+                            let value = build_ast(value)?;
+                            Ok(Ast::Define(name.to_string(), Box::new(value)))
+                        }
+                        _ => Err(EvalError::SymbolRequired),
+                    },
+                    _ => Err(EvalError::ArgumentSize),
+                },
+            },
+            Value::Sym(name) if name.as_ref() == "if" => match cdr.to_vec() {
+                None => Err(EvalError::ImproperArgs),
+                Some(args) => match args.as_slice() {
+                    [cond, th, el] => {
+                        let cond = build_ast(cond)?;
+                        let th = build_ast(th)?;
+                        let el = build_ast(el)?;
+                        Ok(Ast::If(Box::new(cond), Box::new(th), Box::new(el)))
+                    }
+                    _ => Err(EvalError::ArgumentSize),
+                },
+            },
+            Value::Sym(name) if name.as_ref() == "lambda" => match cdr.as_ref() {
+                Value::Cons(params, body) => {
+                    let (param_names, rest_name) = params.collect_improper(|v| match v {
+                        Value::Sym(name) => Ok(name.clone()),
+                        _ => Err(EvalError::SymbolRequired),
+                    })?;
+                    match body.to_vec() {
+                        None => Err(EvalError::ImproperArgs),
+                        Some(body) => match body.as_slice() {
+                            [] => Err(EvalError::ArgumentSize),
+                            body => {
+                                let body =
+                                    body.iter()
+                                        .map(|v| build_ast(v.as_ref()))
+                                        .collect::<std::result::Result<Rc<[Ast]>, EvalError>>()?;
+                                Ok(Ast::Lambda(param_names, rest_name, body))
+                            }
+                        },
+                    }
+                }
+                Value::Nil => Err(EvalError::ArgumentSize),
+                _ => Err(EvalError::ImproperArgs),
+            },
+            f => match cdr.to_vec() {
+                None => Err(EvalError::ImproperArgs),
+                Some(args) => {
+                    let f = build_ast(f)?;
+                    let mut arg_values = Vec::with_capacity(args.len());
+                    for arg in args.iter() {
+                        let arg = build_ast(arg)?;
+                        arg_values.push(arg);
+                    }
+                    Ok(Ast::Apply(Box::new(f), arg_values))
+                }
+            },
+        },
+        Value::Ref(r) => match r.as_ref() {
+            RefValue::Lambda { .. } => unimplemented!(),
+            RefValue::Fun { .. } => unimplemented!(),
+        },
+    }
+}
+
 pub type Result = std::result::Result<Value, EvalError>;
 
 pub fn eval(e: &Value, global: &mut GlobalEnv) -> Result {
-    eval_local_loop(e, global, None)
+    let ast = build_ast(e)?;
+    eval_local_loop(&ast, global, None)
 }
 
 enum Cont {
@@ -36,8 +129,8 @@ impl Cont {
     }
 }
 
-fn eval_local_loop(e: &Value, global: &mut GlobalEnv, local: Option<&Rc<LocalEnv>>) -> Result {
-    let mut res = eval_local(e, global, local)?;
+fn eval_local_loop(ast: &Ast, global: &mut GlobalEnv, local: Option<&Rc<LocalEnv>>) -> Result {
+    let mut res = eval_local(ast, global, local)?;
     loop {
         match res {
             Cont::Ret(v) => return Ok(v),
@@ -47,15 +140,13 @@ fn eval_local_loop(e: &Value, global: &mut GlobalEnv, local: Option<&Rc<LocalEnv
 }
 
 fn eval_local(
-    e: &Value,
+    ast: &Ast,
     global: &mut GlobalEnv,
     local: Option<&Rc<LocalEnv>>,
 ) -> std::result::Result<Cont, EvalError> {
-    match e {
-        Value::Int(n) => Cont::ok_ret(Value::int(*n)),
-        Value::Bool(v) => Cont::ok_ret(Value::bool(*v)),
-        Value::Nil => Cont::ok_ret(Value::nil()),
-        Value::Sym(key) => local
+    match ast {
+        Ast::Const(v) => Cont::ok_ret(v.clone()),
+        Ast::Lookup(key) => local
             .map_or_else(
                 || global.lookup(key),
                 |l| match l.lookup(key) {
@@ -65,92 +156,45 @@ fn eval_local(
             )
             .map(Cont::Ret)
             .ok_or_else(|| EvalError::VariableNotFound(key.to_string())),
-        Value::Cons(car, cdr) => match car.as_ref() {
-            Value::Sym(name) if name.as_ref() == "quote" => match cdr.as_ref().to_vec() {
-                None => Err(EvalError::ImproperArgs),
-                Some(args) => match args.as_slice() {
-                    [x] => Cont::ok_ret(x.as_ref().clone()),
-                    _ => Err(EvalError::ArgumentSize),
-                },
-            },
-            Value::Sym(name) if name.as_ref() == "define" => match cdr.to_vec() {
-                None => Err(EvalError::ImproperArgs),
-                Some(args) => match args.as_slice() {
-                    [name, value] => match name.as_ref() {
-                        Value::Sym(name) => {
-                            let value = eval_local_loop(value, global, local)?;
-                            global.set(name.as_ref(), value);
-                            Cont::ok_ret(Value::nil())
-                        }
-                        _ => Err(EvalError::SymbolRequired),
-                    },
-                    _ => Err(EvalError::ArgumentSize),
-                },
-            },
-            Value::Sym(name) if name.as_ref() == "if" => match cdr.to_vec() {
-                None => Err(EvalError::ImproperArgs),
-                Some(args) => match args.as_slice() {
-                    [cond, th, el] => {
-                        let cond = eval_local_loop(cond, global, local)?;
-                        if let Some(b) = bool::extract(&cond) {
-                            let value = if b { th } else { el };
-                            eval_local(value, global, local)
-                        } else {
-                            Err(EvalError::InvalidArg)
-                        }
-                    }
-                    _ => Err(EvalError::ArgumentSize),
-                },
-            },
-            Value::Sym(name) if name.as_ref() == "lambda" => match cdr.as_ref() {
-                Value::Cons(params, body) => {
-                    let (param_names, rest_name) = params.collect_improper(|v| match v {
-                        Value::Sym(name) => Ok(name.clone()),
-                        _ => Err(EvalError::SymbolRequired),
-                    })?;
-                    match body.to_vec() {
-                        None => Err(EvalError::ImproperArgs),
-                        Some(body) => match body.as_slice() {
-                            [] => Err(EvalError::ArgumentSize),
-                            body => eval_lambda(param_names, rest_name, body, local),
-                        },
-                    }
-                }
-                Value::Nil => Err(EvalError::ArgumentSize),
-                _ => Err(EvalError::ImproperArgs),
-            },
-            f => match cdr.to_vec() {
-                None => Err(EvalError::ImproperArgs),
-                Some(args) => {
-                    let f = eval_local_loop(f, global, local)?;
-                    let mut arg_values = vec![];
-                    for arg in args.iter() {
-                        let a = eval_local_loop(arg, global, local)?;
-                        arg_values.push(a);
-                    }
-                    Cont::ok_cont(f, arg_values)
-                }
-            },
-        },
-        Value::Ref(r) => match r.as_ref() {
-            RefValue::Lambda { .. } => unimplemented!(),
-            RefValue::Fun { .. } => unimplemented!(),
-        },
+        Ast::Define(name, value) => {
+            let value = eval_local_loop(value, global, local)?;
+            global.set(name, value);
+            Cont::ok_ret(Value::nil())
+        }
+        Ast::If(cond, th, el) => {
+            let cond = eval_local_loop(cond, global, local)?;
+            if let Some(b) = bool::extract(&cond) {
+                let value = if b { th } else { el };
+                eval_local(value, global, local)
+            } else {
+                Err(EvalError::InvalidArg)
+            }
+        }
+        Ast::Lambda(param_names, rest_name, body) => eval_lambda(
+            param_names.clone(),
+            rest_name.clone(),
+            body.clone(),
+            local.cloned(),
+        ),
+        Ast::Apply(f, args) => {
+            let f = eval_local_loop(f, global, local)?;
+            let mut arg_values = vec![];
+            for arg in args.iter() {
+                let a = eval_local_loop(arg, global, local)?;
+                arg_values.push(a);
+            }
+            Cont::ok_cont(f, arg_values)
+        }
     }
 }
 
 fn eval_lambda(
     param_names: Vec<Rc<str>>,
     rest_name: Option<Rc<str>>,
-    body: &[Rc<Value>],
-    local: Option<&Rc<LocalEnv>>,
+    body: Rc<[Ast]>,
+    local: Option<Rc<LocalEnv>>,
 ) -> std::result::Result<Cont, EvalError> {
-    Cont::ok_ret(Value::lambda(
-        param_names,
-        rest_name,
-        body.iter().map(|v| v.as_ref().clone()).collect(),
-        local.cloned(),
-    ))
+    Cont::ok_ret(Value::lambda(param_names, rest_name, body, local))
 }
 
 fn bind_args(

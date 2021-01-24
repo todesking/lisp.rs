@@ -1,3 +1,4 @@
+use crate::eval::Ast;
 use crate::eval::EvalError;
 use crate::eval::Result;
 use crate::local_env::LocalEnv;
@@ -20,7 +21,7 @@ pub enum RefValue {
     Lambda {
         param_names: Vec<Rc<str>>,
         rest_name: Option<Rc<str>>,
-        body: Vec<Value>,
+        body: Rc<[Ast]>,
         env: Option<Rc<LocalEnv>>,
     },
     Fun {
@@ -78,7 +79,7 @@ impl Value {
     pub fn lambda(
         param_names: Vec<Rc<str>>,
         rest_name: Option<Rc<str>>,
-        body: Vec<Value>,
+        body: Rc<[Ast]>,
         env: Option<Rc<LocalEnv>>,
     ) -> Value {
         Value::ref_value(RefValue::Lambda {
