@@ -1,4 +1,5 @@
 use crate::eval::EvalError;
+use crate::eval_str_or_panic;
 use crate::value::Extract;
 use crate::value::Value;
 
@@ -15,8 +16,10 @@ impl GlobalEnv {
     }
     pub fn predef() -> GlobalEnv {
         let mut global = Self::new();
+
         global.set("true", Value::Bool(true));
         global.set("false", Value::Bool(false));
+
         global.set("+", Value::fun_reduce("+", |l: i32, r: i32| l + r));
         global.set_fun("-", |args| {
             let mut it = args.iter();
@@ -46,6 +49,22 @@ impl GlobalEnv {
                 Ok(Value::bool(args[0] == args[1]))
             }
         });
+
+        global.set(
+            "cons",
+            Value::fun("cons", |args| {
+                let mut it = args.iter();
+                let x1 = it.next().ok_or(EvalError::ArgumentSize)?;
+                let x2 = it.next().ok_or(EvalError::ArgumentSize)?;
+                if it.next() == None {
+                    Ok(Value::cons(x1.clone(), x2.clone()))
+                } else {
+                    Err(EvalError::ArgumentSize)
+                }
+            }),
+        );
+        eval_str_or_panic("(define list (lambda x x))", &mut global);
+
         global
     }
     pub fn lookup<T: AsRef<str>>(&self, key: &T) -> Option<Value> {

@@ -546,6 +546,22 @@ mod test {
     }
 
     #[test]
+    fn test_predef_cons() {
+        let env = &mut GlobalEnv::predef();
+        eval_str("(cons 1 2)", env).should_ok(Value::cons(1, 2));
+        eval_str("(cons)", env).should_error(EvalError::ArgumentSize);
+        eval_str("(cons 1 2 3)", env).should_error(EvalError::ArgumentSize);
+    }
+
+    #[test]
+    fn test_predef_list() {
+        let env = &mut GlobalEnv::predef();
+        eval_str("(list)", env).should_ok(Value::nil());
+        eval_str("(list 1)", env).should_ok(list![1]);
+        eval_str("(list 1 2)", env).should_ok(list![1, 2]);
+    }
+
+    #[test]
     fn test_complex_fib() {
         let mut env = GlobalEnv::predef();
 

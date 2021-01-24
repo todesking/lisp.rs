@@ -19,3 +19,8 @@ pub fn eval(
 ) -> Result<value::Value, eval::EvalError> {
     eval::eval(expr, global)
 }
+
+pub fn eval_str_or_panic(src: &str, global: &mut global_env::GlobalEnv) -> value::Value {
+    let expr = parse(src).expect("Parse failed");
+    eval(&expr, global).expect("Eval failed")
+}
