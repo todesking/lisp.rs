@@ -4,6 +4,7 @@ use criterion::{criterion_group, criterion_main};
 use lisprs::eval;
 use lisprs::global_env::GlobalEnv;
 use lisprs::list;
+use lisprs::parser::Parser;
 use lisprs::value::Value;
 
 fn run_bench(c: &mut Criterion, n: i32, global: &mut GlobalEnv) {
@@ -20,13 +21,14 @@ static FIB_SRC: &str = "
             (+ (fib (- n 1)) (fib (- n 2))))))";
 
 fn bench_fib(c: &mut Criterion) {
+    let mut parser = Parser::new();
     let mut global = lisprs::predef();
-    let fib = eval(&FIB_SRC.parse().unwrap(), &mut global).unwrap();
+    let fib = eval(&parser.parse(&FIB_SRC).unwrap(), &mut global).unwrap();
     global.set("fib", fib);
 
     // sanity check
     assert_eq!(
-        eval(&list![Value::sym("fib"), 6], &mut global),
+        eval(&list![parser.new_sym("fib"), 6], &mut global),
         Ok(Value::Int(8))
     );
 

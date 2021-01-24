@@ -3,8 +3,10 @@ use io::{stdin, stdout};
 use std::io; // for flush()
 
 use lisprs::global_env::GlobalEnv;
+use lisprs::parser::Parser;
 
 fn main() -> io::Result<()> {
+    let mut parser = Parser::new();
     let mut global = lisprs::predef();
     load_cli_env(&mut global);
 
@@ -27,7 +29,7 @@ fn main() -> io::Result<()> {
             break;
         }
 
-        read_eval_print(line, &mut global);
+        read_eval_print(line, &mut parser, &mut global);
     }
     Ok(())
 }
@@ -49,9 +51,9 @@ fn load_cli_env(global: &mut GlobalEnv) {
     );
 }
 
-fn read_eval_print(s: &str, global: &mut GlobalEnv) {
+fn read_eval_print(s: &str, parser: &mut Parser, global: &mut GlobalEnv) {
     let start = std::time::Instant::now();
-    let expr = lisprs::parse(s);
+    let expr = parser.parse(s);
     match expr {
         Err(err) => {
             println!("Parse error: {:?}", err);
