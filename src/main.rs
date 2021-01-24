@@ -1,50 +1,40 @@
-use io::Write;
-use io::{stdin, stdout};
-use std::io; // for flush()
+#![cfg(feature = "repl")]
+
+use rustyline::error::ReadlineError;
+use rustyline::Editor;
 
 use lisprs::global_env::GlobalEnv;
 use lisprs::parser::Parser;
 
 struct Ctx {
     show_raw_input: bool,
+    global: GlobalEnv,
+    parser: Parser,
 }
 
-fn main() -> io::Result<()> {
-    let mut parser = Parser::new();
-    let mut global = lisprs::predef();
-    load_cli_env(&mut global);
-
+fn main() -> std::io::Result<()> {
     let mut ctx = Ctx {
         show_raw_input: false,
+        global: lisprs::predef(),
+        parser: Parser::new(),
     };
+    load_cli_env(&mut ctx.global);
 
+    let mut rl = Editor::<()>::new();
+
+    println!(":help to show command list");
     loop {
-        print!("LISP.rs> ");
-        stdout().flush()?;
-
-        let mut line = String::new();
-        let nread = stdin().read_line(&mut line)?;
-        if nread == 0 {
-            // eof
-            break;
-        }
-        let line = line.trim();
-
-        match line.trim() {
-            ":q" => break,
-            "" => {}
-            ":show_raw_input" => {
-                ctx.show_raw_input = !ctx.show_raw_input;
-                println!("show_raw_input = {}", ctx.show_raw_input);
-            }
-            ":ls" => {
-                let mut keys = global.ls().collect::<Vec<_>>();
-                keys.sort_unstable();
-                for key in keys {
-                    println!("{}", key);
+        let line = rl.readline("LISP.rs> ");
+        match line {
+            Ok(line) => {
+                rl.add_history_entry(line.as_str());
+                let quit = do_command(&line, &mut ctx);
+                if quit {
+                    break;
                 }
             }
-            src => read_eval_print(src, &mut parser, &mut global, &ctx),
+            Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => break,
+            Err(err) => println!("I/O Error: {:?}", err),
         }
     }
     Ok(())
@@ -60,9 +50,40 @@ fn load_cli_env(global: &mut GlobalEnv) {
     );
 }
 
-fn read_eval_print(s: &str, parser: &mut Parser, global: &mut GlobalEnv, ctx: &Ctx) {
+fn do_command(line: &str, ctx: &mut Ctx) -> bool {
+    match line.trim() {
+        ":q" => true,
+        "" => false,
+        ":show_raw_input" => {
+            ctx.show_raw_input = !ctx.show_raw_input;
+            println!("show_raw_input = {}", ctx.show_raw_input);
+            false
+        }
+        ":ls" => {
+            let mut keys = ctx.global.ls().collect::<Vec<_>>();
+            keys.sort_unstable();
+            for key in keys {
+                println!("- {}", key);
+            }
+            false
+        }
+        ":help" => {
+            println!("Commands:");
+            for cmd in &[":q", ":show_raw_input", ":ls", ":help"] {
+                println!("- {}", cmd);
+            }
+            false
+        }
+        src => {
+            read_eval_print(src, ctx);
+            false
+        }
+    }
+}
+
+fn read_eval_print(s: &str, ctx: &mut Ctx) {
     let start = std::time::Instant::now();
-    let expr = parser.parse(s);
+    let expr = ctx.parser.parse(s);
     match expr {
         Err(err) => {
             println!("Parse error: {:?}", err);
@@ -71,7 +92,7 @@ fn read_eval_print(s: &str, parser: &mut Parser, global: &mut GlobalEnv, ctx: &C
             if ctx.show_raw_input {
                 println!("[Input] {:?}", expr);
             }
-            let v = lisprs::eval(&expr, global);
+            let v = lisprs::eval(&expr, &mut ctx.global);
             match v {
                 Ok(v) => {
                     println!("     => {}", v);
