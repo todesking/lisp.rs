@@ -99,6 +99,12 @@ impl Value {
             _ => None,
         }
     }
+    pub fn as_tuple1(&self) -> Option<&Value> {
+        match self {
+            Value::Cons(car, cdr) if cdr.as_ref() == &Value::Nil => Some(car),
+            _ => None,
+        }
+    }
     pub fn to_vec(&self) -> Option<Vec<&Value>> {
         let (values, tail) = self.to_improper_vec();
         if tail.is_nil() {
@@ -233,28 +239,44 @@ impl Value {
     }
 }
 
+fn fmt_list(
+    value: &Value,
+    fmt: &mut std::fmt::Formatter,
+) -> std::result::Result<(), std::fmt::Error> {
+    fmt.write_str("(")?;
+    let (heads, tail) = value.to_improper_vec();
+    if let Some((last, heads)) = heads.split_last() {
+        for x in heads {
+            fmt.write_fmt(format_args!("{}", x))?;
+            fmt.write_str(" ")?;
+        }
+        fmt.write_fmt(format_args!("{}", last))?;
+        if !tail.is_nil() {
+            fmt.write_str(" . ")?;
+            fmt.write_fmt(format_args!("{}", tail))?;
+        }
+    }
+    fmt.write_str(")")
+}
+
 impl std::fmt::Display for Value {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         match self {
             Value::Int(v) => fmt.write_fmt(format_args!("{}", v)),
             Value::Bool(v) => fmt.write_fmt(format_args!("{}", v)),
             Value::Sym(v) => fmt.write_str(v.as_ref()),
-            Value::Cons(..) | Value::Nil => {
-                fmt.write_str("(")?;
-                let (heads, tail) = self.to_improper_vec();
-                if let Some((last, heads)) = heads.split_last() {
-                    for x in heads {
-                        fmt.write_fmt(format_args!("{}", x))?;
-                        fmt.write_str(" ")?;
+            Value::Nil => fmt.write_str("()"),
+            Value::Cons(car, cdr) => {
+                if car.as_ref() == &Value::sym("quote") {
+                    if let Some(v) = cdr.as_tuple1() {
+                        fmt.write_str("'")?;
+                        v.fmt(fmt)
+                    } else {
+                        fmt_list(self, fmt)
                     }
-                    fmt.write_fmt(format_args!("{}", last))?;
-                    if !tail.is_nil() {
-                        fmt.write_str(" . ")?;
-                        fmt.write_fmt(format_args!("{}", tail))?;
-                    }
+                } else {
+                    fmt_list(self, fmt)
                 }
-                fmt.write_str(")")?;
-                Ok(())
             }
             Value::Ref(r) => fmt.write_fmt(format_args!("{}", r)),
         }
@@ -382,6 +404,7 @@ mod test {
             Value::fun("f", |_| Ok(Value::nil())).to_string(),
             "#<primitive:f>"
         );
+        assert_eq!(list![Value::sym("quote"), 1].to_string(), "'1");
     }
 
     #[test]
