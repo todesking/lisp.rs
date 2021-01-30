@@ -16,6 +16,7 @@ Just a toy language.
   * Basic arithmetic: `+`, `-`, `*`, `/`, `%`
   * Comparing: `eq?`
   * List operations: `cons`, `list`
+  * Error handling: `(error value1 value2)`(Raise user error), `(catch-error (lambda (error-kind values) ...) expr)`(Catch error in expr)
 
 ## Usage
 
