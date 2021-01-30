@@ -691,7 +691,7 @@ mod test {
     fn test_error() {
         let env = &mut GlobalEnv::predef();
 
-        eval_str("(error 123)", env).should_error(EvalError::User(123.into()));
+        eval_str("(error 123)", env).should_error(EvalError::User(list![123]));
     }
 
     #[test]
@@ -704,7 +704,7 @@ mod test {
                 (error 123))",
             env,
         )
-        .should_ok(list![Value::sym("error"), Value::sym("User"), 123]);
+        .should_ok(list![Value::sym("error"), Value::sym("User"), list![123]]);
         eval_str(
             "
             (catch-error
@@ -725,5 +725,17 @@ mod test {
             Value::sym("VariableNotFound"),
             Value::sym("aaa")
         ]);
+    }
+
+    #[test]
+    fn test_assert_eq() {
+        let env = &mut GlobalEnv::predef();
+
+        eval_str("(assert-eq 1 1)", env).should_nil();
+        eval_str("(assert-eq 1 2)", env).should_error(EvalError::User(list![
+            Value::sym("assert-eq"),
+            1,
+            2
+        ]));
     }
 }

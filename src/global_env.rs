@@ -20,10 +20,20 @@ impl GlobalEnv {
         global.set("true", Value::Bool(true));
         global.set("false", Value::Bool(false));
 
-        global.set_fun("error", |args| match args {
-            [value] => Err(EvalError::User(value.clone())),
-            _ => Err(EvalError::ArgumentSize),
+        global.set_fun("error", |args| {
+            let v = args
+                .iter()
+                .rev()
+                .fold(Value::nil(), |a, x| Value::cons(x.clone(), a));
+            Err(EvalError::User(v))
         });
+        eval_str_or_panic(
+            "
+            (define assert-eq
+                (lambda (expected actual)
+                    (if (eq? expected actual) () (error 'assert-eq expected actual))))",
+            &mut global,
+        );
 
         global.set("+", Value::fun_reduce("+", |l: i32, r: i32| l + r));
         global.set_fun("-", |args| {
