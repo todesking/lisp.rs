@@ -1,4 +1,4 @@
-.PHONY: all check fix clippy test clean bench build help memtest
+.PHONY: all check fix clippy test clean bench build help memtest print-type-sizes
 
 all: fix clippy test memtest
 
@@ -25,6 +25,9 @@ bench:
 
 build:
 	cargo build --all-targets
+
+print-type-sizes:
+	find . -name '*.rs' | xargs touch && cargo +nightly rustc --release --lib -- -Z print-type-sizes
 
 help:
 	@grep '^[^#[:space:]].*:' Makefile
