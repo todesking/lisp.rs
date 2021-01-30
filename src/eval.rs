@@ -337,16 +337,6 @@ mod test {
     }
 
     #[test]
-    fn test_list_macro() {
-        assert_eq!(list!(), Value::Nil);
-        assert_eq!(list!(1), Value::cons(Value::Int(1), Value::Nil));
-        assert_eq!(
-            list!(Value::Int(1), 2),
-            Value::cons(Value::Int(1), Value::cons(Value::Int(2), Value::Nil))
-        );
-    }
-
-    #[test]
     fn test_num() {
         let mut env = GlobalEnv::new();
         eval_str("1", &mut env).should_ok(1);

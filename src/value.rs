@@ -388,7 +388,8 @@ impl Extract for bool {
 macro_rules! list {
     () =>  { Value::Nil };
     ($x: expr) => { Value::cons(Value::from($x), Value::Nil) };
-    ($x: expr, $($xs: expr),+) => { Value::cons(Value::from($x), list!($($xs),+)) };
+    ($x: expr ; $y: expr) => { Value::cons(Value::from($x), Value::from($y)) };
+    ($x: expr, $($xs: expr),+$(; $y: expr)?) => { Value::cons(Value::from($x), list!($($xs),+$(; $y)?)) };
 }
 
 #[cfg(test)]
@@ -417,6 +418,21 @@ mod test {
         assert_eq!(
             Value::fun("f", |_| Ok(Value::nil())).to_string(),
             "#<primitive:f>"
+        );
+    }
+
+    #[test]
+    fn test_list_macro() {
+        assert_eq!(list!(), Value::Nil);
+        assert_eq!(list!(1), Value::cons(Value::Int(1), Value::Nil));
+        assert_eq!(
+            list!(Value::Int(1), 2),
+            Value::cons(Value::Int(1), Value::cons(Value::Int(2), Value::Nil))
+        );
+        assert_eq!(list!(1; 2), Value::cons(Value::int(1), Value::int(2)));
+        assert_eq!(
+            list!(1, 2; 3),
+            Value::cons(Value::int(1), Value::cons(Value::int(2), Value::int(3)))
         );
     }
 }
