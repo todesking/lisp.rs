@@ -9,6 +9,11 @@ pub fn parse(src: &str) -> Result<value::Value, parser::ParseError> {
     src.parse::<value::Value>()
 }
 
+pub fn parse_all(src: &str) -> Result<Vec<value::Value>, parser::ParseError> {
+    let mut parser = parser::Parser::new();
+    parser.parse_all(src)
+}
+
 pub fn predef() -> global_env::GlobalEnv {
     global_env::GlobalEnv::predef()
 }

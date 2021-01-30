@@ -42,6 +42,20 @@ impl EvalError {
     }
 }
 
+impl std::fmt::Display for EvalError {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        match self {
+            EvalError::User(value) => {
+                fmt.write_str("User(")?;
+                value.fmt(fmt)?;
+                fmt.write_str(")")
+            }
+            _ => fmt.write_fmt(format_args!("{:?}", self)),
+        }
+    }
+}
+impl std::error::Error for EvalError {}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Ast {
     Const(Value),

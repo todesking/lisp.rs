@@ -8,6 +8,14 @@ pub enum ParseError {
     Redundant,
 }
 
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        fmt.write_fmt(format_args!("{:?}", self))
+    }
+}
+
+impl std::error::Error for ParseError {}
+
 impl std::str::FromStr for Value {
     type Err = ParseError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -38,6 +46,20 @@ impl Parser {
                 Err(ParseError::Redundant)
             }
         })
+    }
+    pub fn parse_all(&mut self, s: &str) -> Result<Vec<Value>, ParseError> {
+        let mut s = skip_ws(s);
+        let mut exprs = Vec::new();
+        loop {
+            if s.is_empty() {
+                break;
+            }
+            let (expr, s1) = parse_expr(self, s)?;
+            s = s1;
+            exprs.push(expr);
+            s = skip_ws(s);
+        }
+        Ok(exprs)
     }
     pub fn str_intern(&mut self, name: &str) -> Rc<str> {
         self.names
