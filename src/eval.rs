@@ -317,7 +317,11 @@ fn bind_args(
             values.insert(k.clone(), v.clone());
         }
         if let Some(rest_name) = rest_name {
-            values.insert(rest_name, Value::from(&args[param_names.len()..]));
+            let rest = args[param_names.len()..]
+                .iter()
+                .rev()
+                .fold(Value::nil(), |a, x| Value::cons(x.clone(), a));
+            values.insert(rest_name, rest);
         }
 
         Ok(LocalEnv::new(values, parent))

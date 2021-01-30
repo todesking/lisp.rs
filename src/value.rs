@@ -326,30 +326,6 @@ impl ToValue for bool {
     }
 }
 
-impl<'a> ToValue for &'a Vec<Rc<Value>> {
-    fn to_value(self) -> Value {
-        self.iter()
-            .rev()
-            .fold(Value::Nil, |a, x| Value::Cons(x.clone(), Rc::new(a)))
-    }
-}
-
-impl ToValue for &[Rc<Value>] {
-    fn to_value(self) -> Value {
-        self.iter()
-            .rev()
-            .fold(Value::Nil, |a, x| Value::Cons(x.clone(), Rc::new(a)))
-    }
-}
-
-impl ToValue for &[Value] {
-    fn to_value(self) -> Value {
-        self.iter().rev().fold(Value::Nil, |a, x| {
-            Value::Cons(Rc::new(x.clone()), Rc::new(a))
-        })
-    }
-}
-
 pub trait Extract
 where
     Self: Sized,
