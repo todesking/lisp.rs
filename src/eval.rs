@@ -17,7 +17,29 @@ pub enum EvalError {
     InvalidArg,
     CantApply(Value, Box<[Value]>),
     Unsafe,
-    UserError(Value),
+    User(Value),
+}
+
+impl EvalError {
+    fn to_tuple(&self) -> (&'static str, Value) {
+        match self {
+            EvalError::VariableNotFound(name) => ("VariableNotFound", Value::sym(name.as_ref())),
+            EvalError::ImproperArgs => ("ImproperArgs", Value::nil()),
+            EvalError::ArgumentSize => ("ArgumentSize", Value::nil()),
+            EvalError::SymbolRequired => ("SymbolRequired", Value::nil()),
+            EvalError::InvalidArg => ("InvalidArg", Value::nil()),
+            EvalError::CantApply(f, args) => {
+                let args = args
+                    .iter()
+                    .rev()
+                    .cloned()
+                    .fold(Value::nil(), |a, x| Value::cons(x, a));
+                ("CantApply", list![f.clone(), args])
+            }
+            EvalError::Unsafe => ("Unsafe", Value::nil()),
+            EvalError::User(value) => ("User", value.clone()),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -32,6 +54,10 @@ pub enum Ast {
         name: String,
         value: Box<Ast>,
         safe_only: bool,
+    },
+    CatchError {
+        handler: Box<Ast>,
+        expr: Box<Ast>,
     },
 }
 
@@ -101,6 +127,17 @@ pub fn build_ast(expr: &Value) -> std::result::Result<Ast, EvalError> {
             Value::Sym(name) if name.as_ref() == "unsafe-set-local!" => {
                 build_ast_set_local(cdr, false)
             }
+            Value::Sym(name) if name.as_ref() == "catch-error" => match cdr.to_vec() {
+                None => Err(EvalError::ImproperArgs),
+                Some(args) => match args.as_slice() {
+                    [handler, expr] => {
+                        let handler = build_ast(handler).map(Box::new)?;
+                        let expr = build_ast(expr).map(Box::new)?;
+                        Ok(Ast::CatchError { handler, expr })
+                    }
+                    _ => Err(EvalError::ArgumentSize),
+                },
+            },
             f => match cdr.to_vec() {
                 None => Err(EvalError::ImproperArgs),
                 Some(args) => {
@@ -242,6 +279,16 @@ fn eval_local(
                 },
             )
         }
+        Ast::CatchError { handler, expr } => {
+            let handler = eval_local_loop(handler, global, local)?;
+            match eval_local_loop(expr, global, local) {
+                Ok(value) => Cont::ok_ret(value),
+                Err(err) => {
+                    let (name, err) = err.to_tuple();
+                    eval_apply(&handler, &[Value::sym(name), err], global)
+                }
+            }
+        }
     }
 }
 
@@ -361,8 +408,8 @@ mod test {
         let mut env = GlobalEnv::new();
 
         eval_str("'1", &mut env).should_ok(1);
-        eval_str("'(1 2)", &mut env).should_ok(&vec![1, 2]);
-        eval_str("(quote (1 2))", &mut env).should_ok(&vec![1, 2]);
+        eval_str("'(1 2)", &mut env).should_ok(list![1, 2]);
+        eval_str("(quote (1 2))", &mut env).should_ok(list![1, 2]);
         eval_str("(quote 1 . 2)", &mut env).should_error(EvalError::ImproperArgs);
         eval_str("(quote . 1)", &mut env).should_error(EvalError::ImproperArgs);
         eval_str("(quote 1 2)", &mut env).should_error(EvalError::ArgumentSize);
@@ -640,6 +687,39 @@ mod test {
     fn test_error() {
         let env = &mut GlobalEnv::predef();
 
-        eval_str("(error 123)", env).should_error(EvalError::UserError(123.into()));
+        eval_str("(error 123)", env).should_error(EvalError::User(123.into()));
+    }
+
+    #[test]
+    fn test_catch_error() {
+        let env = &mut GlobalEnv::predef();
+        eval_str(
+            "
+            (catch-error
+                (lambda (e x) (list 'error e x))
+                (error 123))",
+            env,
+        )
+        .should_ok(list![Value::sym("error"), Value::sym("User"), 123]);
+        eval_str(
+            "
+            (catch-error
+                (lambda (e x) (list 'error e x))
+                (+ 1 2))",
+            env,
+        )
+        .should_ok(3);
+        eval_str(
+            "
+            (catch-error
+                (lambda (e x) (list 'error e x))
+                aaa)",
+            env,
+        )
+        .should_ok(list![
+            Value::sym("error"),
+            Value::sym("VariableNotFound"),
+            Value::sym("aaa")
+        ]);
     }
 }

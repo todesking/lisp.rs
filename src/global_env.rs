@@ -21,7 +21,7 @@ impl GlobalEnv {
         global.set("false", Value::Bool(false));
 
         global.set_fun("error", |args| match args {
-            [value] => Err(EvalError::UserError(value.clone())),
+            [value] => Err(EvalError::User(value.clone())),
             _ => Err(EvalError::ArgumentSize),
         });
 

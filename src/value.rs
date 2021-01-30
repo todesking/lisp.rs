@@ -326,15 +326,6 @@ impl ToValue for bool {
     }
 }
 
-impl<'a, T> ToValue for &'a Vec<T>
-where
-    &'a T: Into<Value>,
-{
-    fn to_value(self) -> Value {
-        self.iter().rev().fold(Value::Nil, |a, x| Value::cons(x, a))
-    }
-}
-
 impl<'a> ToValue for &'a Vec<Rc<Value>> {
     fn to_value(self) -> Value {
         self.iter()
