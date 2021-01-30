@@ -20,6 +20,11 @@ impl GlobalEnv {
         global.set("true", Value::Bool(true));
         global.set("false", Value::Bool(false));
 
+        global.set_fun("error", |args| match args {
+            [value] => Err(EvalError::UserError(value.clone())),
+            _ => Err(EvalError::ArgumentSize),
+        });
+
         global.set("+", Value::fun_reduce("+", |l: i32, r: i32| l + r));
         global.set_fun("-", |args| {
             let mut it = args.iter();

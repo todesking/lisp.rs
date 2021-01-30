@@ -17,6 +17,7 @@ pub enum EvalError {
     InvalidArg,
     CantApply(Value, Box<[Value]>),
     Unsafe,
+    UserError(Value),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -643,5 +644,12 @@ mod test {
         eval_str("(c1)", env).should_ok(2);
 
         eval_str("(c2)", env).should_ok(1);
+    }
+
+    #[test]
+    fn test_error() {
+        let env = &mut GlobalEnv::predef();
+
+        eval_str("(error 123)", env).should_error(EvalError::UserError(123.into()));
     }
 }
