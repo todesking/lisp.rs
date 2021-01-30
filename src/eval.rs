@@ -87,83 +87,69 @@ pub fn build_ast(expr: &Value) -> std::result::Result<Ast, EvalError> {
         Value::Nil => Ok(Ast::Const(Value::nil())),
         Value::Sym(key) => Ok(Ast::Lookup(key.to_string())),
         Value::Cons(car, cdr) => match car.as_ref() {
-            Value::Sym(name) if name.as_ref() == "quote" => match cdr.as_ref().to_vec() {
-                None => illegal_argument_error(cdr.as_ref().clone()),
-                Some(args) => match args.as_slice() {
-                    [x] => Ok(Ast::Const((*x).clone())),
-                    _ => illegal_argument_error(cdr.as_ref().clone()),
-                },
-            },
-            Value::Sym(name) if name.as_ref() == "define" => match cdr.to_vec() {
-                None => illegal_argument_error(cdr.as_ref().clone()),
-                Some(args) => match args.as_slice() {
-                    [name, value] => match name {
+            Value::Sym(name) if name.as_ref() == "quote" => {
+                if let Some(x) = cdr.as_tuple1() {
+                    Ok(Ast::Const((*x).clone()))
+                } else {
+                    illegal_argument_error(cdr.as_ref().clone())
+                }
+            }
+            Value::Sym(name) if name.as_ref() == "define" => {
+                if let Some((name, value)) = cdr.as_tuple2() {
+                    match name {
                         Value::Sym(name) => {
                             let value = build_ast(value)?;
                             Ok(Ast::Define(name.to_string(), Box::new(value)))
                         }
                         _ => Err(EvalError::SymbolRequired),
-                    },
-                    _ => illegal_argument_error(cdr.as_ref().clone()),
-                },
-            },
-            Value::Sym(name) if name.as_ref() == "if" => match cdr.to_vec() {
-                None => illegal_argument_error(cdr.as_ref().clone()),
-                Some(args) => match args.as_slice() {
-                    [cond, th, el] => {
-                        let cond = build_ast(cond)?;
-                        let th = build_ast(th)?;
-                        let el = build_ast(el)?;
-                        Ok(Ast::If(Box::new(cond), Box::new(th), Box::new(el)))
                     }
-                    _ => illegal_argument_error(cdr.as_ref().clone()),
-                },
-            },
-            Value::Sym(name) if name.as_ref() == "lambda" => match cdr.as_ref() {
-                Value::Cons(params, body) => {
+                } else {
+                    illegal_argument_error(cdr.as_ref().clone())
+                }
+            }
+            Value::Sym(name) if name.as_ref() == "if" => {
+                if let Some((cond, th, el)) = cdr.as_tuple3() {
+                    let cond = build_ast(cond)?;
+                    let th = build_ast(th)?;
+                    let el = build_ast(el)?;
+                    Ok(Ast::If(Box::new(cond), Box::new(th), Box::new(el)))
+                } else {
+                    illegal_argument_error(cdr.as_ref().clone())
+                }
+            }
+            Value::Sym(name) if name.as_ref() == "lambda" => match cdr.to_vec().as_deref() {
+                Some([params, bodies @ .., expr]) => {
                     let (param_names, rest_name) = params.collect_improper(|v| match v {
                         Value::Sym(name) => Ok(name.clone()),
                         _ => Err(EvalError::SymbolRequired),
                     })?;
-                    match body.to_vec() {
-                        None => illegal_argument_error(cdr.as_ref().clone()),
-                        Some(body) => match body.as_slice() {
-                            [] => illegal_argument_error(cdr.as_ref().clone()),
-                            [bodies @ .., expr] => {
-                                let bodies = bodies
-                                    .iter()
-                                    .map(|v| build_ast(v))
-                                    .collect::<std::result::Result<Rc<[Ast]>, EvalError>>(
-                                )?;
-                                let expr = Rc::new(build_ast(expr)?);
-                                Ok(Ast::Lambda {
-                                    param_names,
-                                    rest_name,
-                                    bodies,
-                                    expr,
-                                })
-                            }
-                        },
-                    }
+                    let bodies = bodies
+                        .iter()
+                        .map(|v| build_ast(v))
+                        .collect::<std::result::Result<Rc<[Ast]>, EvalError>>()?;
+                    let expr = Rc::new(build_ast(expr)?);
+                    Ok(Ast::Lambda {
+                        param_names,
+                        rest_name,
+                        bodies,
+                        expr,
+                    })
                 }
-                Value::Nil => illegal_argument_error(cdr.as_ref().clone()),
-                _ => illegal_argument_error(cdr.as_ref().clone()),
+                _ => Err(EvalError::IllegalArgument(cdr.as_ref().clone())),
             },
             Value::Sym(name) if name.as_ref() == "set-local!" => build_ast_set_local(cdr, true),
             Value::Sym(name) if name.as_ref() == "unsafe-set-local!" => {
                 build_ast_set_local(cdr, false)
             }
-            Value::Sym(name) if name.as_ref() == "catch-error" => match cdr.to_vec() {
-                None => illegal_argument_error(cdr.as_ref().clone()),
-                Some(args) => match args.as_slice() {
-                    [handler, expr] => {
-                        let handler = build_ast(handler).map(Box::new)?;
-                        let expr = build_ast(expr).map(Box::new)?;
-                        Ok(Ast::CatchError { handler, expr })
-                    }
-                    _ => illegal_argument_error(cdr.as_ref().clone()),
-                },
-            },
+            Value::Sym(name) if name.as_ref() == "catch-error" => {
+                if let Some((handler, expr)) = cdr.as_tuple2() {
+                    let handler = build_ast(handler).map(Box::new)?;
+                    let expr = build_ast(expr).map(Box::new)?;
+                    Ok(Ast::CatchError { handler, expr })
+                } else {
+                    illegal_argument_error(cdr.as_ref().clone())
+                }
+            }
             f => match cdr.to_vec() {
                 None => illegal_argument_error(cdr.as_ref().clone()),
                 Some(args) => {
@@ -185,22 +171,18 @@ pub fn build_ast(expr: &Value) -> std::result::Result<Ast, EvalError> {
 }
 
 fn build_ast_set_local(expr: &Value, safe_only: bool) -> std::result::Result<Ast, EvalError> {
-    match expr.to_vec() {
-        None => illegal_argument_error(expr.clone()),
-        Some(args) => match args.as_slice() {
-            [name, value] => {
-                let name = name.as_sym().ok_or(EvalError::SymbolRequired)?;
-                let name = name.to_string();
-                let value = build_ast(value)?;
-                let value = Box::new(value);
-                Ok(Ast::SetLocal {
-                    name,
-                    value,
-                    safe_only,
-                })
-            }
-            _ => illegal_argument_error(expr.clone()),
-        },
+    if let Some((name, value)) = expr.as_tuple2() {
+        let name = name.as_sym().ok_or(EvalError::SymbolRequired)?;
+        let name = name.to_string();
+        let value = build_ast(value)?;
+        let value = Box::new(value);
+        Ok(Ast::SetLocal {
+            name,
+            value,
+            safe_only,
+        })
+    } else {
+        illegal_argument_error(expr.clone())
     }
 }
 

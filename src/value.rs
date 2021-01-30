@@ -105,6 +105,18 @@ impl Value {
             _ => None,
         }
     }
+    pub fn as_tuple2(&self) -> Option<(&Value, &Value)> {
+        match self {
+            Value::Cons(car, cdr) => cdr.as_tuple1().map(|x| (car.as_ref(), x)),
+            _ => None,
+        }
+    }
+    pub fn as_tuple3(&self) -> Option<(&Value, &Value, &Value)> {
+        match self {
+            Value::Cons(car, cdr) => cdr.as_tuple2().map(|(x1, x2)| (car.as_ref(), x1, x2)),
+            _ => None,
+        }
+    }
     pub fn to_vec(&self) -> Option<Vec<&Value>> {
         let (values, tail) = self.to_improper_vec();
         if tail.is_nil() {
