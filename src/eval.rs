@@ -11,8 +11,7 @@ use std::cell::RefCell;
 #[derive(Debug, PartialEq, Eq)]
 pub enum EvalError {
     VariableNotFound(String),
-    ImproperArgs,
-    ArgumentSize,
+    IllegalArgument(Value),
     SymbolRequired,
     InvalidArg,
     CantApply(Value, Box<[Value]>),
@@ -24,8 +23,7 @@ impl EvalError {
     fn to_tuple(&self) -> (&'static str, Value) {
         match self {
             EvalError::VariableNotFound(name) => ("VariableNotFound", Value::sym(name.as_ref())),
-            EvalError::ImproperArgs => ("ImproperArgs", Value::nil()),
-            EvalError::ArgumentSize => ("ArgumentSize", Value::nil()),
+            EvalError::IllegalArgument(value) => ("IllegalArgument", value.clone()),
             EvalError::SymbolRequired => ("SymbolRequired", Value::nil()),
             EvalError::InvalidArg => ("InvalidArg", Value::nil()),
             EvalError::CantApply(f, args) => {
@@ -46,9 +44,14 @@ impl std::fmt::Display for EvalError {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         match self {
             EvalError::User(value) => {
-                fmt.write_str("User(")?;
+                fmt.write_str("User[ ")?;
                 value.fmt(fmt)?;
-                fmt.write_str(")")
+                fmt.write_str(" ]")
+            }
+            EvalError::IllegalArgument(value) => {
+                fmt.write_str("IllegalArgument[ ")?;
+                value.fmt(fmt)?;
+                fmt.write_str(" ]")
             }
             _ => fmt.write_fmt(format_args!("{:?}", self)),
         }
@@ -80,6 +83,10 @@ pub enum Ast {
     },
 }
 
+fn illegal_argument_error<T>(value: Value) -> std::result::Result<T, EvalError> {
+    Err(EvalError::IllegalArgument(value))
+}
+
 pub fn build_ast(expr: &Value) -> std::result::Result<Ast, EvalError> {
     match expr {
         Value::Int(n) => Ok(Ast::Const(Value::int(*n))),
@@ -88,14 +95,14 @@ pub fn build_ast(expr: &Value) -> std::result::Result<Ast, EvalError> {
         Value::Sym(key) => Ok(Ast::Lookup(key.to_string())),
         Value::Cons(car, cdr) => match car.as_ref() {
             Value::Sym(name) if name.as_ref() == "quote" => match cdr.as_ref().to_vec() {
-                None => Err(EvalError::ImproperArgs),
+                None => illegal_argument_error(cdr.as_ref().clone()),
                 Some(args) => match args.as_slice() {
                     [x] => Ok(Ast::Const((*x).clone())),
-                    _ => Err(EvalError::ArgumentSize),
+                    _ => illegal_argument_error(cdr.as_ref().clone()),
                 },
             },
             Value::Sym(name) if name.as_ref() == "define" => match cdr.to_vec() {
-                None => Err(EvalError::ImproperArgs),
+                None => illegal_argument_error(cdr.as_ref().clone()),
                 Some(args) => match args.as_slice() {
                     [name, value] => match name {
                         Value::Sym(name) => {
@@ -104,11 +111,11 @@ pub fn build_ast(expr: &Value) -> std::result::Result<Ast, EvalError> {
                         }
                         _ => Err(EvalError::SymbolRequired),
                     },
-                    _ => Err(EvalError::ArgumentSize),
+                    _ => illegal_argument_error(cdr.as_ref().clone()),
                 },
             },
             Value::Sym(name) if name.as_ref() == "if" => match cdr.to_vec() {
-                None => Err(EvalError::ImproperArgs),
+                None => illegal_argument_error(cdr.as_ref().clone()),
                 Some(args) => match args.as_slice() {
                     [cond, th, el] => {
                         let cond = build_ast(cond)?;
@@ -116,7 +123,7 @@ pub fn build_ast(expr: &Value) -> std::result::Result<Ast, EvalError> {
                         let el = build_ast(el)?;
                         Ok(Ast::If(Box::new(cond), Box::new(th), Box::new(el)))
                     }
-                    _ => Err(EvalError::ArgumentSize),
+                    _ => illegal_argument_error(cdr.as_ref().clone()),
                 },
             },
             Value::Sym(name) if name.as_ref() == "lambda" => match cdr.as_ref() {
@@ -126,9 +133,9 @@ pub fn build_ast(expr: &Value) -> std::result::Result<Ast, EvalError> {
                         _ => Err(EvalError::SymbolRequired),
                     })?;
                     match body.to_vec() {
-                        None => Err(EvalError::ImproperArgs),
+                        None => illegal_argument_error(cdr.as_ref().clone()),
                         Some(body) => match body.as_slice() {
-                            [] => Err(EvalError::ArgumentSize),
+                            [] => illegal_argument_error(cdr.as_ref().clone()),
                             [bodies @ .., expr] => {
                                 let bodies = bodies
                                     .iter()
@@ -146,26 +153,26 @@ pub fn build_ast(expr: &Value) -> std::result::Result<Ast, EvalError> {
                         },
                     }
                 }
-                Value::Nil => Err(EvalError::ArgumentSize),
-                _ => Err(EvalError::ImproperArgs),
+                Value::Nil => illegal_argument_error(cdr.as_ref().clone()),
+                _ => illegal_argument_error(cdr.as_ref().clone()),
             },
             Value::Sym(name) if name.as_ref() == "set-local!" => build_ast_set_local(cdr, true),
             Value::Sym(name) if name.as_ref() == "unsafe-set-local!" => {
                 build_ast_set_local(cdr, false)
             }
             Value::Sym(name) if name.as_ref() == "catch-error" => match cdr.to_vec() {
-                None => Err(EvalError::ImproperArgs),
+                None => illegal_argument_error(cdr.as_ref().clone()),
                 Some(args) => match args.as_slice() {
                     [handler, expr] => {
                         let handler = build_ast(handler).map(Box::new)?;
                         let expr = build_ast(expr).map(Box::new)?;
                         Ok(Ast::CatchError { handler, expr })
                     }
-                    _ => Err(EvalError::ArgumentSize),
+                    _ => illegal_argument_error(cdr.as_ref().clone()),
                 },
             },
             f => match cdr.to_vec() {
-                None => Err(EvalError::ImproperArgs),
+                None => illegal_argument_error(cdr.as_ref().clone()),
                 Some(args) => {
                     let f = build_ast(f)?;
                     let mut arg_values = Vec::with_capacity(args.len());
@@ -186,7 +193,7 @@ pub fn build_ast(expr: &Value) -> std::result::Result<Ast, EvalError> {
 
 fn build_ast_set_local(expr: &Value, safe_only: bool) -> std::result::Result<Ast, EvalError> {
     match expr.to_vec() {
-        None => Err(EvalError::ImproperArgs),
+        None => illegal_argument_error(expr.clone()),
         Some(args) => match args.as_slice() {
             [name, value] => {
                 let name = name.as_sym().ok_or(EvalError::SymbolRequired)?;
@@ -199,7 +206,7 @@ fn build_ast_set_local(expr: &Value, safe_only: bool) -> std::result::Result<Ast
                     safe_only,
                 })
             }
-            _ => Err(EvalError::ArgumentSize),
+            _ => illegal_argument_error(expr.clone()),
         },
     }
 }
@@ -314,16 +321,14 @@ fn eval_local(
                 },
             )
         }
-        Ast::CatchError { handler, expr } => {
-            let handler = eval_local_loop(handler, global, local)?;
-            match eval_local_loop(expr, global, local) {
-                Ok(value) => Cont::ok_ret(value),
-                Err(err) => {
-                    let (name, err) = err.to_tuple();
-                    eval_apply(&handler, &[Value::sym(name), err], global)
-                }
+        Ast::CatchError { handler, expr } => match eval_local_loop(expr, global, local) {
+            Ok(value) => Cont::ok_ret(value),
+            Err(err) => {
+                let handler = eval_local_loop(handler, global, local)?;
+                let (name, err) = err.to_tuple();
+                eval_apply(&handler, &[Value::sym(name), err], global)
             }
-        }
+        },
     }
 }
 
@@ -336,7 +341,12 @@ fn bind_args(
     let invalid_argument_size = (rest_name.is_none() && param_names.len() != args.len())
         || (rest_name.is_some() && param_names.len() > args.len());
     if invalid_argument_size {
-        Err(EvalError::ArgumentSize)
+        illegal_argument_error(
+            args[0..]
+                .iter()
+                .rev()
+                .fold(Value::nil(), |a, x| Value::cons(x.clone(), a)),
+        )
     } else {
         let mut values = std::collections::HashMap::new();
         for (k, v) in param_names.iter().zip(args) {
@@ -437,9 +447,9 @@ mod test {
         eval_str("'1", &mut env).should_ok(1);
         eval_str("'(1 2)", &mut env).should_ok(list![1, 2]);
         eval_str("(quote (1 2))", &mut env).should_ok(list![1, 2]);
-        eval_str("(quote 1 . 2)", &mut env).should_error(EvalError::ImproperArgs);
-        eval_str("(quote . 1)", &mut env).should_error(EvalError::ImproperArgs);
-        eval_str("(quote 1 2)", &mut env).should_error(EvalError::ArgumentSize);
+        eval_str("(quote 1 . 2)", &mut env).should_error(EvalError::IllegalArgument(list![1; 2]));
+        eval_str("(quote . 1)", &mut env).should_error(EvalError::IllegalArgument(1.into()));
+        eval_str("(quote 1 2)", &mut env).should_error(EvalError::IllegalArgument(list![1, 2]));
     }
 
     #[test]
@@ -453,7 +463,11 @@ mod test {
         eval_str("(define x '1)", &mut env).should_ok(Value::Nil);
         eval_str("x", &mut env).should_ok(1);
 
-        eval_str("(define x 2 3)", &mut env).should_error(EvalError::ArgumentSize);
+        eval_str("(define x 2 3)", &mut env).should_error(EvalError::IllegalArgument(list![
+            Value::sym("x"),
+            2,
+            3
+        ]));
         eval_str("(define 1 2)", &mut env).should_error(EvalError::SymbolRequired);
         eval_str("(define x aaa)", &mut env)
             .should_error(EvalError::VariableNotFound("aaa".into()));
@@ -463,9 +477,11 @@ mod test {
     fn test_lambda_error() {
         let mut env = GlobalEnv::new();
 
-        eval_str("(lambda)", &mut env).should_error(EvalError::ArgumentSize);
-        eval_str("(lambda () 1 . 2)", &mut env).should_error(EvalError::ImproperArgs);
-        eval_str("(lambda (x))", &mut env).should_error(EvalError::ArgumentSize);
+        eval_str("(lambda)", &mut env).should_error(EvalError::IllegalArgument(list![]));
+        eval_str("(lambda () 1 . 2)", &mut env)
+            .should_error(EvalError::IllegalArgument(list![list![], 1 ; 2]));
+        eval_str("(lambda (x))", &mut env)
+            .should_error(EvalError::IllegalArgument(list![list![Value::sym("x")]]));
 
         eval_str("(lambda 1 1)", &mut env).should_error(EvalError::SymbolRequired);
     }
@@ -475,7 +491,8 @@ mod test {
 
         eval_str("((lambda () 1))", &mut env).should_ok(1);
         eval_str("((lambda (x) x) 1)", &mut env).should_ok(1);
-        eval_str("((lambda (x y) x) 1)", &mut env).should_error(EvalError::ArgumentSize);
+        eval_str("((lambda (x y) x) 1)", &mut env)
+            .should_error(EvalError::IllegalArgument(list![1]));
         eval_str("((lambda (x y) y) 1 2)", &mut env).should_ok(2);
     }
 
@@ -501,7 +518,7 @@ mod test {
         eval_str("(my-tail 1)", &mut env).should_ok(list!());
         eval_str("(my-head 1 2)", &mut env).should_ok(1);
         eval_str("(my-tail 1 2)", &mut env).should_ok(list!(2));
-        eval_str("(my-head)", &mut env).should_error(EvalError::ArgumentSize);
+        eval_str("(my-head)", &mut env).should_error(EvalError::IllegalArgument(list![]));
     }
 
     #[test]
@@ -534,18 +551,18 @@ mod test {
 
         env.set("f0", Value::fun0("f0", || 123));
         eval_str("(f0)", &mut env).should_ok(123);
-        eval_str("(f0 1)", &mut env).should_error(EvalError::ArgumentSize);
+        eval_str("(f0 1)", &mut env).should_error(EvalError::IllegalArgument(list![1]));
 
         env.set("f1", Value::fun1("f1", |n: i32| n));
-        eval_str("(f1)", &mut env).should_error(EvalError::ArgumentSize);
-        eval_str("(f1 1 2)", &mut env).should_error(EvalError::ArgumentSize);
+        eval_str("(f1)", &mut env).should_error(EvalError::IllegalArgument(list![]));
+        eval_str("(f1 1 2)", &mut env).should_error(EvalError::IllegalArgument(list![1, 2]));
         eval_str("(f1 'a)", &mut env).should_error(EvalError::InvalidArg);
         eval_str("(f1 1)", &mut env).should_ok(1);
 
         env.set("f2", Value::fun2("f2", |n: i32, m: i32| n + m));
-        eval_str("(f2)", &mut env).should_error(EvalError::ArgumentSize);
-        eval_str("(f2 1)", &mut env).should_error(EvalError::ArgumentSize);
-        eval_str("(f2 1 2 3)", &mut env).should_error(EvalError::ArgumentSize);
+        eval_str("(f2)", &mut env).should_error(EvalError::IllegalArgument(list![]));
+        eval_str("(f2 1)", &mut env).should_error(EvalError::IllegalArgument(list![1]));
+        eval_str("(f2 1 2 3)", &mut env).should_error(EvalError::IllegalArgument(list![1, 2, 3]));
         eval_str("(f2 1 'a)", &mut env).should_error(EvalError::InvalidArg);
         eval_str("(f2 1 2)", &mut env).should_ok(3);
 
@@ -556,7 +573,7 @@ mod test {
         eval_str("(sum 'x)", &mut env).should_error(EvalError::InvalidArg);
 
         env.set("sum1", Value::fun_reduce("sum1", |a: i32, x: i32| a + x));
-        eval_str("(sum1)", &mut env).should_error(EvalError::ArgumentSize);
+        eval_str("(sum1)", &mut env).should_error(EvalError::IllegalArgument(list![]));
         eval_str("(sum1 'x)", &mut env).should_error(EvalError::InvalidArg);
         eval_str("(sum1 1)", &mut env).should_ok(1);
         eval_str("(sum1 1 2)", &mut env).should_ok(3);
@@ -574,25 +591,25 @@ mod test {
     fn test_predef_arithmetic() {
         let mut env = GlobalEnv::predef();
 
-        eval_str("(+)", &mut env).should_error(EvalError::ArgumentSize);
+        eval_str("(+)", &mut env).should_error(EvalError::IllegalArgument(list![]));
         eval_str("(+ 1)", &mut env).should_ok(1);
         eval_str("(+ 1 2)", &mut env).should_ok(3);
 
         // TODO: (-) should accept >= 1 argument
-        eval_str("(-)", &mut env).should_error(EvalError::ArgumentSize);
+        eval_str("(-)", &mut env).should_error(EvalError::IllegalArgument(list![]));
         eval_str("(- 1)", &mut env).should_ok(-1);
         eval_str("(- 3 8)", &mut env).should_ok(-5);
 
-        eval_str("(*)", &mut env).should_error(EvalError::ArgumentSize);
+        eval_str("(*)", &mut env).should_error(EvalError::IllegalArgument(list![]));
         eval_str("(* 1)", &mut env).should_ok(1);
         eval_str("(* 1 2)", &mut env).should_ok(2);
 
-        eval_str("(/)", &mut env).should_error(EvalError::ArgumentSize);
-        eval_str("(/ 1)", &mut env).should_error(EvalError::ArgumentSize);
+        eval_str("(/)", &mut env).should_error(EvalError::IllegalArgument(list![]));
+        eval_str("(/ 1)", &mut env).should_error(EvalError::IllegalArgument(list![1]));
         eval_str("(/ 4 2)", &mut env).should_ok(2);
 
-        eval_str("(%)", &mut env).should_error(EvalError::ArgumentSize);
-        eval_str("(% 1)", &mut env).should_error(EvalError::ArgumentSize);
+        eval_str("(%)", &mut env).should_error(EvalError::IllegalArgument(list![]));
+        eval_str("(% 1)", &mut env).should_error(EvalError::IllegalArgument(list![1]));
         eval_str("(% 4 2)", &mut env).should_ok(0);
         // TODO: Floating point arithmetic
     }
@@ -614,8 +631,8 @@ mod test {
     fn test_predef_cons() {
         let env = &mut GlobalEnv::predef();
         eval_str("(cons 1 2)", env).should_ok(Value::cons(1, 2));
-        eval_str("(cons)", env).should_error(EvalError::ArgumentSize);
-        eval_str("(cons 1 2 3)", env).should_error(EvalError::ArgumentSize);
+        eval_str("(cons)", env).should_error(EvalError::IllegalArgument(list![]));
+        eval_str("(cons 1 2 3)", env).should_error(EvalError::IllegalArgument(list![1, 2, 3]));
     }
 
     #[test]

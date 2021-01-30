@@ -20,13 +20,7 @@ impl GlobalEnv {
         global.set("true", Value::Bool(true));
         global.set("false", Value::Bool(false));
 
-        global.set_fun("error", |args| {
-            let v = args
-                .iter()
-                .rev()
-                .fold(Value::nil(), |a, x| Value::cons(x.clone(), a));
-            Err(EvalError::User(v))
-        });
+        global.set_fun("error", |args| Err(EvalError::User(Value::list(args))));
         eval_str_or_panic(
             "
             (define assert-eq
@@ -34,11 +28,23 @@ impl GlobalEnv {
                     (if (eq? expected actual) () (error 'assert-eq expected actual))))",
             &mut global,
         );
+        eval_str_or_panic(
+            "(define assert-error
+                (lambda (f err)
+                    (assert-eq
+                        (catch-error
+                            (lambda (err x) (cons err x))
+                            (f))
+                        err)))",
+            &mut global,
+        );
 
         global.set("+", Value::fun_reduce("+", |l: i32, r: i32| l + r));
         global.set_fun("-", |args| {
             let mut it = args.iter();
-            let x0 = it.next().ok_or(EvalError::ArgumentSize)?;
+            let x0 = it
+                .next()
+                .ok_or_else(|| EvalError::IllegalArgument(Value::list(args)))?;
             let x0 = i32::extract(x0).ok_or(EvalError::InvalidArg)?;
             if let Some(x1) = it.next() {
                 // binary or more
@@ -59,7 +65,7 @@ impl GlobalEnv {
         global.set("%", Value::fun2("%", |l: i32, r: i32| l % r));
         global.set_fun("eq?", |args| {
             if args.len() != 2 {
-                Err(crate::eval::EvalError::ArgumentSize)
+                Err(crate::eval::EvalError::IllegalArgument(Value::list(args)))
             } else {
                 Ok(Value::bool(args[0] == args[1]))
             }
@@ -69,12 +75,16 @@ impl GlobalEnv {
             "cons",
             Value::fun("cons", |args| {
                 let mut it = args.iter();
-                let x1 = it.next().ok_or(EvalError::ArgumentSize)?;
-                let x2 = it.next().ok_or(EvalError::ArgumentSize)?;
+                let x1 = it
+                    .next()
+                    .ok_or_else(|| EvalError::IllegalArgument(Value::list(args)))?;
+                let x2 = it
+                    .next()
+                    .ok_or_else(|| EvalError::IllegalArgument(Value::list(args)))?;
                 if it.next() == None {
                     Ok(Value::cons(x1.clone(), x2.clone()))
                 } else {
-                    Err(EvalError::ArgumentSize)
+                    Err(EvalError::IllegalArgument(Value::list(args)))
                 }
             }),
         );

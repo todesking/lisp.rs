@@ -78,6 +78,11 @@ impl Value {
     pub fn ref_value(v: RefValue) -> Value {
         Value::Ref(Rc::new(v))
     }
+    pub fn list(xs: &[Value]) -> Value {
+        xs.iter()
+            .rev()
+            .fold(Value::nil(), |a, x| Value::cons(x.clone(), a))
+    }
     pub fn is_nil(&self) -> bool {
         self == &Value::Nil
     }
@@ -146,7 +151,7 @@ impl Value {
     {
         let fun = move |args: &[Value]| {
             if !args.is_empty() {
-                Err(EvalError::ArgumentSize)
+                Err(EvalError::IllegalArgument(Value::list(args)))
             } else {
                 let v = f();
                 Ok(v.into())
@@ -162,7 +167,7 @@ impl Value {
     {
         let fun = move |args: &[Value]| {
             if args.len() != 1 {
-                return Err(EvalError::ArgumentSize);
+                return Err(EvalError::IllegalArgument(Value::list(args)));
             }
             let x1 = T1::extract(&args[0]).ok_or(EvalError::InvalidArg)?;
             let v = f(x1).into();
@@ -179,7 +184,7 @@ impl Value {
     {
         let fun = move |args: &[Value]| {
             if args.len() != 2 {
-                return Err(EvalError::ArgumentSize);
+                return Err(EvalError::IllegalArgument(Value::list(args)));
             }
             let x1 = T1::extract(&args[0]).ok_or(EvalError::InvalidArg)?;
             let x2 = T2::extract(&args[1]).ok_or(EvalError::InvalidArg)?;
@@ -212,7 +217,9 @@ impl Value {
     {
         let fun = move |args: &[Value]| {
             let mut it = args.iter();
-            let a = it.next().ok_or(EvalError::ArgumentSize)?;
+            let a = it
+                .next()
+                .ok_or_else(|| EvalError::IllegalArgument(Value::list(args)))?;
             let mut a = T1::extract(a).ok_or(EvalError::InvalidArg)?;
             for x in it {
                 match T1::extract(x) {
