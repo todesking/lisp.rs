@@ -48,7 +48,12 @@ pub enum Ast {
     Define(String, Box<Ast>),
     Lookup(String),
     If(Box<Ast>, Box<Ast>, Box<Ast>),
-    Lambda(Vec<Rc<str>>, Option<Rc<str>>, Rc<[Ast]>),
+    Lambda {
+        param_names: Vec<Rc<str>>,
+        rest_name: Option<Rc<str>>,
+        bodies: Rc<[Ast]>,
+        expr: Rc<Ast>,
+    },
     Apply(Box<Ast>, Vec<Ast>),
     SetLocal {
         name: String,
@@ -110,12 +115,19 @@ pub fn build_ast(expr: &Value) -> std::result::Result<Ast, EvalError> {
                         None => Err(EvalError::ImproperArgs),
                         Some(body) => match body.as_slice() {
                             [] => Err(EvalError::ArgumentSize),
-                            body => {
-                                let body = body
+                            [bodies @ .., expr] => {
+                                let bodies = bodies
                                     .iter()
                                     .map(|v| build_ast(v))
-                                    .collect::<std::result::Result<Rc<[Ast]>, EvalError>>()?;
-                                Ok(Ast::Lambda(param_names, rest_name, body))
+                                    .collect::<std::result::Result<Rc<[Ast]>, EvalError>>(
+                                )?;
+                                let expr = Rc::new(build_ast(expr)?);
+                                Ok(Ast::Lambda {
+                                    param_names,
+                                    rest_name,
+                                    bodies,
+                                    expr,
+                                })
                             }
                         },
                     }
@@ -244,12 +256,21 @@ fn eval_local(
                 Err(EvalError::InvalidArg)
             }
         }
-        Ast::Lambda(param_names, rest_name, body) => eval_lambda(
-            param_names.clone(),
-            rest_name.clone(),
-            body.clone(),
-            local.cloned(),
-        ),
+        Ast::Lambda {
+            param_names,
+            rest_name,
+            bodies,
+            expr,
+        } => {
+            let lambda = RefValue::Lambda {
+                param_names: param_names.clone(),
+                rest_name: rest_name.clone(),
+                bodies: bodies.clone(),
+                expr: expr.clone(),
+                env: local.cloned(),
+            };
+            Cont::ok_ret(Value::ref_value(lambda))
+        }
         Ast::Apply(f, args) => {
             let f = eval_local_loop(f, global, local)?;
             let mut arg_values = vec![];
@@ -292,15 +313,6 @@ fn eval_local(
     }
 }
 
-fn eval_lambda(
-    param_names: Vec<Rc<str>>,
-    rest_name: Option<Rc<str>>,
-    body: Rc<[Ast]>,
-    local: Option<Rc<RefCell<LocalEnv>>>,
-) -> std::result::Result<Cont, EvalError> {
-    Cont::ok_ret(Value::lambda(param_names, rest_name, body, local))
-}
-
 fn bind_args(
     param_names: &[Rc<str>],
     rest_name: Option<Rc<str>>,
@@ -338,19 +350,16 @@ fn eval_apply(
             RefValue::Lambda {
                 param_names,
                 rest_name,
-                body,
+                bodies,
+                expr,
                 env,
             } => {
                 let local = bind_args(param_names, rest_name.clone(), args, env.clone())?;
                 let local = Rc::new(RefCell::new(local));
-                let mut e = Cont::Ret(Value::nil());
-                if let Some((last, heads)) = body.split_last() {
-                    for b in heads {
-                        eval_local_loop(b, global, Some(&local))?;
-                    }
-                    e = eval_local(last, global, Some(&local))?;
+                for b in bodies.as_ref() {
+                    eval_local_loop(b, global, Some(&local))?;
                 }
-                Ok(e)
+                eval_local(expr, global, Some(&local))
             }
             RefValue::Fun { fun, .. } => fun.0(args).map(Cont::Ret),
         },

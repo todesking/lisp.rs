@@ -22,7 +22,8 @@ pub enum RefValue {
     Lambda {
         param_names: Vec<Rc<str>>,
         rest_name: Option<Rc<str>>,
-        body: Rc<[Ast]>,
+        bodies: Rc<[Ast]>,
+        expr: Rc<Ast>,
         env: Option<Rc<RefCell<LocalEnv>>>,
     },
     Fun {
@@ -76,19 +77,6 @@ impl Value {
     }
     pub fn ref_value(v: RefValue) -> Value {
         Value::Ref(Rc::new(v))
-    }
-    pub fn lambda(
-        param_names: Vec<Rc<str>>,
-        rest_name: Option<Rc<str>>,
-        body: Rc<[Ast]>,
-        env: Option<Rc<RefCell<LocalEnv>>>,
-    ) -> Value {
-        Value::ref_value(RefValue::Lambda {
-            param_names,
-            rest_name,
-            body,
-            env,
-        })
     }
     pub fn is_nil(&self) -> bool {
         self == &Value::Nil
@@ -373,12 +361,13 @@ mod test {
         assert_eq!(Value::cons(1, Value::cons(2, 3)).to_string(), "(1 2 . 3)");
         assert_eq!(list![list![1, 2], 3].to_string(), "((1 2) 3)");
         assert_eq!(
-            Value::lambda(
-                vec![Rc::from("x")],
-                Some(Rc::from("rest")),
-                Vec::<Ast>::new().into_iter().collect::<Rc<[Ast]>>(),
-                None
-            )
+            Value::ref_value(RefValue::Lambda {
+                param_names: vec![Rc::from("x")],
+                rest_name: Some(Rc::from("rest")),
+                bodies: Vec::<Ast>::new().into_iter().collect::<Rc<[Ast]>>(),
+                expr: Rc::new(Ast::Const(Value::nil())),
+                env: None
+            })
             .to_string(),
             "#<lambda x . rest>"
         );
