@@ -26,14 +26,7 @@ impl EvalError {
             EvalError::IllegalArgument(value) => ("IllegalArgument", value.clone()),
             EvalError::SymbolRequired => ("SymbolRequired", Value::nil()),
             EvalError::InvalidArg => ("InvalidArg", Value::nil()),
-            EvalError::CantApply(f, args) => {
-                let args = args
-                    .iter()
-                    .rev()
-                    .cloned()
-                    .fold(Value::nil(), |a, x| Value::cons(x, a));
-                ("CantApply", list![f.clone(), args])
-            }
+            EvalError::CantApply(f, args) => ("CantApply", list![f.clone(), Value::list(args)]),
             EvalError::Unsafe => ("Unsafe", Value::nil()),
             EvalError::User(value) => ("User", value.clone()),
         }
@@ -341,22 +334,14 @@ fn bind_args(
     let invalid_argument_size = (rest_name.is_none() && param_names.len() != args.len())
         || (rest_name.is_some() && param_names.len() > args.len());
     if invalid_argument_size {
-        illegal_argument_error(
-            args[0..]
-                .iter()
-                .rev()
-                .fold(Value::nil(), |a, x| Value::cons(x.clone(), a)),
-        )
+        illegal_argument_error(Value::list(args))
     } else {
         let mut values = std::collections::HashMap::new();
         for (k, v) in param_names.iter().zip(args) {
             values.insert(k.clone(), v.clone());
         }
         if let Some(rest_name) = rest_name {
-            let rest = args[param_names.len()..]
-                .iter()
-                .rev()
-                .fold(Value::nil(), |a, x| Value::cons(x.clone(), a));
+            let rest = Value::list(&args[param_names.len()..]);
             values.insert(rest_name, rest);
         }
 
