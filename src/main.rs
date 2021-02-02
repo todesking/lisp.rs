@@ -86,7 +86,7 @@ fn read_eval_print(s: &str, ctx: &mut Ctx) {
     let expr = ctx.parser.parse(s);
     match expr {
         Err(err) => {
-            println!("Parse error: {:?}", err);
+            println!("Parse error: {}", err);
         }
         Ok(expr) => {
             if ctx.show_raw_input {
@@ -98,7 +98,7 @@ fn read_eval_print(s: &str, ctx: &mut Ctx) {
                     println!("     => {}", v);
                 }
                 Err(err) => {
-                    println!("Error=> {:?}", err);
+                    println!("Error=> {}", err);
                 }
             }
         }

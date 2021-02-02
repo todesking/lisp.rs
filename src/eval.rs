@@ -35,19 +35,11 @@ impl EvalError {
 
 impl std::fmt::Display for EvalError {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        match self {
-            EvalError::User(value) => {
-                fmt.write_str("User[ ")?;
-                value.fmt(fmt)?;
-                fmt.write_str(" ]")
-            }
-            EvalError::IllegalArgument(value) => {
-                fmt.write_str("IllegalArgument[ ")?;
-                value.fmt(fmt)?;
-                fmt.write_str(" ]")
-            }
-            _ => fmt.write_fmt(format_args!("{:?}", self)),
-        }
+        let (err, data) = self.to_tuple();
+        fmt.write_str(err)?;
+        fmt.write_str("[")?;
+        fmt.write_fmt(format_args!("{}", data))?;
+        fmt.write_str("]")
     }
 }
 impl std::error::Error for EvalError {}
