@@ -117,6 +117,12 @@ impl Value {
             _ => None,
         }
     }
+    pub fn as_cons(&self) -> Option<(&Value, &Value)> {
+        match self {
+            Value::Cons(car, cdr) => Some((car, cdr)),
+            _ => None,
+        }
+    }
     pub fn to_vec(&self) -> Option<Vec<&Value>> {
         let (values, tail) = self.to_improper_vec();
         if tail.is_nil() {

@@ -89,6 +89,30 @@ impl GlobalEnv {
             }),
         );
         eval_str_or_panic("(define list (lambda x x))", &mut global);
+        global.set(
+            "car",
+            Value::fun("car", |args| {
+                if args.len() != 1 {
+                    Err(EvalError::IllegalArgument(Value::list(args)))
+                } else if let Some((car, _)) = args[0].as_cons() {
+                    Ok(car.clone())
+                } else {
+                    Err(EvalError::InvalidArg)
+                }
+            }),
+        );
+        global.set(
+            "cdr",
+            Value::fun("cdr", |args| {
+                if args.len() != 1 {
+                    Err(EvalError::IllegalArgument(Value::list(args)))
+                } else if let Some((_, cdr)) = args[0].as_cons() {
+                    Ok(cdr.clone())
+                } else {
+                    Err(EvalError::InvalidArg)
+                }
+            }),
+        );
 
         global
     }
