@@ -5,13 +5,15 @@ use crate::value::Value;
 
 #[derive(Debug, Default)]
 pub struct GlobalEnv {
-    values: std::collections::HashMap<String, Value>,
+    ids: std::collections::HashMap<String, usize>,
+    values: Vec<Value>,
 }
 
 impl GlobalEnv {
     pub fn new() -> GlobalEnv {
         GlobalEnv {
-            values: std::collections::HashMap::new(),
+            ids: std::collections::HashMap::new(),
+            values: Vec::new(),
         }
     }
     pub fn predef() -> GlobalEnv {
@@ -105,10 +107,19 @@ impl GlobalEnv {
         global
     }
     pub fn lookup<T: AsRef<str>>(&self, key: &T) -> Option<Value> {
-        self.values.get(key.as_ref()).cloned()
+        self.ids.get(key.as_ref()).map(|i| self.values[*i].clone())
+    }
+    pub fn get(&self, id: usize) -> Value {
+        self.values[id].clone()
     }
     pub fn set<T: Into<String>>(&mut self, key: T, value: Value) {
-        self.values.insert(key.into(), value);
+        let key = key.into();
+        if let Some(id) = self.ids.get(&key) {
+            self.values[*id] = value;
+        } else {
+            self.values.push(value);
+            self.ids.insert(key, self.values.len() - 1);
+        }
     }
     pub fn set_fun<F>(&mut self, name: &str, f: F)
     where
@@ -142,6 +153,6 @@ impl GlobalEnv {
         })
     }
     pub fn ls(&self) -> impl Iterator<Item = &str> {
-        self.values.keys().map(|s| s.as_ref())
+        self.ids.keys().map(|s| s.as_ref())
     }
 }
