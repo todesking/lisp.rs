@@ -50,6 +50,7 @@ impl std::fmt::Debug for Fun {
     }
 }
 
+// constructor functions
 impl Value {
     pub fn int(n: i32) -> Value {
         Value::Int(n)
@@ -85,119 +86,6 @@ impl Value {
         xs.iter()
             .rev()
             .fold(Value::nil(), |a, x| Value::cons(x.clone(), a))
-    }
-    pub fn set_car(&self, v: Value, safe: bool) -> Result {
-        if safe && !v.is_cyclic_reference_safe() {
-            return Err(EvalError::Unsafe);
-        }
-        match self {
-            Value::Ref(r) => match r.as_ref() {
-                RefValue::Cons(target, _) => {
-                    *target.borrow_mut() = v;
-                    Ok(Value::nil())
-                }
-                _ => Err(EvalError::IllegalArgument(self.clone())),
-            },
-            _ => Err(EvalError::IllegalArgument(self.clone())),
-        }
-    }
-    pub fn set_cdr(&self, v: Value, safe: bool) -> Result {
-        if safe && !v.is_cyclic_reference_safe() {
-            return Err(EvalError::Unsafe);
-        }
-        match self {
-            Value::Ref(r) => match r.as_ref() {
-                RefValue::Cons(_, target) => {
-                    *target.borrow_mut() = v;
-                    Ok(Value::nil())
-                }
-                _ => Err(EvalError::IllegalArgument(self.clone())),
-            },
-            _ => Err(EvalError::IllegalArgument(self.clone())),
-        }
-    }
-    pub fn is_nil(&self) -> bool {
-        self == &Value::Nil
-    }
-    pub fn is_cyclic_reference_safe(&self) -> bool {
-        !matches!(self, Value::Ref(..))
-    }
-    pub fn as_sym(&self) -> Option<&Rc<str>> {
-        match self {
-            Value::Sym(name) => Some(name),
-            _ => None,
-        }
-    }
-    pub fn to_list1(&self) -> Option<Value> {
-        let (car, cdr) = self.to_cons()?;
-        if cdr == Value::Nil {
-            Some(car)
-        } else {
-            None
-        }
-    }
-    pub fn to_list2(&self) -> Option<(Value, Value)> {
-        let (x1, xs) = self.to_cons()?;
-        let x2 = xs.to_list1()?;
-        Some((x1, x2))
-    }
-    pub fn to_list3(&self) -> Option<(Value, Value, Value)> {
-        let (x1, xs) = self.to_cons()?;
-        let (x2, x3) = xs.to_list2()?;
-        Some((x1, x2, x3))
-    }
-    pub fn to_cons(&self) -> Option<(Value, Value)> {
-        match self {
-            Value::Ref(r) => match r.as_ref() {
-                RefValue::Cons(car, cdr) => Some((car.borrow().clone(), cdr.borrow().clone())),
-                _ => None,
-            },
-            _ => None,
-        }
-    }
-    pub fn to_vec(&self) -> Option<Vec<Value>> {
-        let (values, tail) = self.to_improper_vec();
-        if tail.is_nil() {
-            Some(values)
-        } else {
-            None
-        }
-    }
-    pub fn to_improper_vec(&self) -> (Vec<Value>, Value) {
-        let mut rest = self.clone();
-        let mut values = Vec::new();
-        while let Some((car, cdr)) = rest.to_cons() {
-            rest = cdr;
-            values.push(car);
-        }
-        (values, rest)
-    }
-    pub fn collect_improper<'a, F, T, E>(
-        &'a self,
-        f: F,
-    ) -> std::result::Result<(Vec<T>, Option<T>), E>
-    where
-        F: for<'b> Fn(&'b Value) -> std::result::Result<T, E>,
-        T: 'a,
-    {
-        if self == &Value::Nil {
-            return Ok((vec![], None));
-        }
-
-        let mut rest = self.clone();
-        let mut values = Vec::new();
-        while let Some((car, cdr)) = rest.to_cons() {
-            rest = cdr;
-            let v = f(&car)?;
-            values.push(v);
-        }
-        match rest {
-            Value::Nil => Ok((values, None)),
-            x => {
-                let v = f(&x)?;
-                Ok((values, Some(v)))
-            }
-        }
     }
     // TODO: Use macro to abstract funX functions
     pub fn fun0<F, R>(name: &str, f: F) -> Value
@@ -286,6 +174,126 @@ impl Value {
             Ok(a.into())
         };
         Value::fun(name, fun)
+    }
+}
+// extractor and query functions
+impl Value {
+    pub fn is_cyclic_reference_safe(&self) -> bool {
+        !matches!(self, Value::Ref(..))
+    }
+    pub fn is_nil(&self) -> bool {
+        self == &Value::Nil
+    }
+    pub fn as_sym(&self) -> Option<&Rc<str>> {
+        match self {
+            Value::Sym(name) => Some(name),
+            _ => None,
+        }
+    }
+    pub fn to_list1(&self) -> Option<Value> {
+        let (car, cdr) = self.to_cons()?;
+        if cdr == Value::Nil {
+            Some(car)
+        } else {
+            None
+        }
+    }
+    pub fn to_list2(&self) -> Option<(Value, Value)> {
+        let (x1, xs) = self.to_cons()?;
+        let x2 = xs.to_list1()?;
+        Some((x1, x2))
+    }
+    pub fn to_list3(&self) -> Option<(Value, Value, Value)> {
+        let (x1, xs) = self.to_cons()?;
+        let (x2, x3) = xs.to_list2()?;
+        Some((x1, x2, x3))
+    }
+    pub fn to_cons(&self) -> Option<(Value, Value)> {
+        match self {
+            Value::Ref(r) => match r.as_ref() {
+                RefValue::Cons(car, cdr) => Some((car.borrow().clone(), cdr.borrow().clone())),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    pub fn to_vec(&self) -> Option<Vec<Value>> {
+        let (values, tail) = self.to_improper_vec();
+        if tail.is_nil() {
+            Some(values)
+        } else {
+            None
+        }
+    }
+    pub fn to_improper_vec(&self) -> (Vec<Value>, Value) {
+        let mut rest = self.clone();
+        let mut values = Vec::new();
+        while let Some((car, cdr)) = rest.to_cons() {
+            rest = cdr;
+            values.push(car);
+        }
+        (values, rest)
+    }
+    pub fn collect_improper<'a, F, T, E>(
+        &'a self,
+        f: F,
+    ) -> std::result::Result<(Vec<T>, Option<T>), E>
+    where
+        F: for<'b> Fn(&'b Value) -> std::result::Result<T, E>,
+        T: 'a,
+    {
+        if self == &Value::Nil {
+            return Ok((vec![], None));
+        }
+
+        let mut rest = self.clone();
+        let mut values = Vec::new();
+        while let Some((car, cdr)) = rest.to_cons() {
+            rest = cdr;
+            let v = f(&car)?;
+            values.push(v);
+        }
+        match rest {
+            Value::Nil => Ok((values, None)),
+            x => {
+                let v = f(&x)?;
+                Ok((values, Some(v)))
+            }
+        }
+    }
+}
+
+// misc functions
+impl Value {
+    pub fn set_car(&self, v: Value, safe: bool) -> Result {
+        if safe && !v.is_cyclic_reference_safe() {
+            return Err(EvalError::Unsafe);
+        }
+        match self {
+            Value::Ref(r) => match r.as_ref() {
+                RefValue::Cons(target, _) => {
+                    *target.borrow_mut() = v;
+                    Ok(Value::nil())
+                }
+                _ => Err(EvalError::IllegalArgument(self.clone())),
+            },
+            _ => Err(EvalError::IllegalArgument(self.clone())),
+        }
+    }
+    pub fn set_cdr(&self, v: Value, safe: bool) -> Result {
+        if safe && !v.is_cyclic_reference_safe() {
+            return Err(EvalError::Unsafe);
+        }
+        match self {
+            Value::Ref(r) => match r.as_ref() {
+                RefValue::Cons(_, target) => {
+                    *target.borrow_mut() = v;
+                    Ok(Value::nil())
+                }
+                _ => Err(EvalError::IllegalArgument(self.clone())),
+            },
+            _ => Err(EvalError::IllegalArgument(self.clone())),
+        }
     }
 }
 
