@@ -213,6 +213,7 @@ fn eval_apply(f: &Value, args: &[Value], global: &mut GlobalEnv) -> Result<Cont,
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::predef;
 
     fn eval_str(s: &str, env: &mut GlobalEnv) -> EvalResult {
         let expr = s.parse::<Value>().expect("should valid sexpr");
@@ -349,7 +350,7 @@ mod test {
 
     #[test]
     fn test_if() {
-        let mut env = GlobalEnv::predef();
+        let mut env = predef();
 
         eval_str("(if true 1 2)", &mut env).should_ok(1);
         eval_str("(if false 1 2)", &mut env).should_ok(2);
@@ -392,7 +393,7 @@ mod test {
 
     #[test]
     fn test_predef_constants() {
-        let mut env = GlobalEnv::predef();
+        let mut env = predef();
 
         eval_str("true", &mut env).should_ok(Value::Bool(true));
         eval_str("false", &mut env).should_ok(Value::Bool(false));
@@ -400,7 +401,7 @@ mod test {
 
     #[test]
     fn test_predef_arithmetic() {
-        let mut env = GlobalEnv::predef();
+        let mut env = predef();
 
         eval_str("(+)", &mut env).should_error(EvalError::IllegalArgument(list![]));
         eval_str("(+ 1)", &mut env).should_ok(1);
@@ -427,7 +428,7 @@ mod test {
 
     #[test]
     fn test_predef_eq() {
-        let mut env = GlobalEnv::predef();
+        let mut env = predef();
 
         eval_str("(eq? 1 1)", &mut env).should_ok(true);
         eval_str("(eq? 1 2)", &mut env).should_ok(false);
@@ -440,7 +441,7 @@ mod test {
 
     #[test]
     fn test_predef_cons() {
-        let env = &mut GlobalEnv::predef();
+        let env = &mut predef();
         eval_str("(cons 1 2)", env).should_ok(Value::cons(1, 2));
         eval_str("(cons)", env).should_error(EvalError::IllegalArgument(list![]));
         eval_str("(cons 1 2 3)", env).should_error(EvalError::IllegalArgument(list![1, 2, 3]));
@@ -448,7 +449,7 @@ mod test {
 
     #[test]
     fn test_predef_list() {
-        let env = &mut GlobalEnv::predef();
+        let env = &mut predef();
         eval_str("(list)", env).should_ok(Value::nil());
         eval_str("(list 1)", env).should_ok(list![1]);
         eval_str("(list 1 2)", env).should_ok(list![1, 2]);
@@ -456,7 +457,7 @@ mod test {
 
     #[test]
     fn test_complex_fib() {
-        let mut env = GlobalEnv::predef();
+        let mut env = predef();
 
         eval_str(
             "
@@ -477,7 +478,7 @@ mod test {
 
     #[test]
     fn test_tco() {
-        let env = &mut GlobalEnv::predef();
+        let env = &mut predef();
 
         eval_str(
             "
@@ -493,7 +494,7 @@ mod test {
 
     #[test]
     fn test_set_local() {
-        let env = &mut GlobalEnv::predef();
+        let env = &mut predef();
         eval_str("(define global-var 1)", env).should_nil();
 
         eval_str("((lambda (x) (set-local! x 2) x) 1)", env).should_ok(2);
@@ -511,7 +512,7 @@ mod test {
 
     #[test]
     fn test_set_local_counter() {
-        let env = &mut GlobalEnv::predef();
+        let env = &mut predef();
 
         eval_str(
             "
@@ -540,14 +541,14 @@ mod test {
 
     #[test]
     fn test_error() {
-        let env = &mut GlobalEnv::predef();
+        let env = &mut predef();
 
         eval_str("(error 123)", env).should_error(EvalError::User(list![123]));
     }
 
     #[test]
     fn test_catch_error() {
-        let env = &mut GlobalEnv::predef();
+        let env = &mut predef();
         eval_str(
             "
             (catch-error
@@ -580,7 +581,7 @@ mod test {
 
     #[test]
     fn test_assert_eq() {
-        let env = &mut GlobalEnv::predef();
+        let env = &mut predef();
 
         eval_str("(assert-eq 1 1)", env).should_nil();
         eval_str("(assert-eq 1 2)", env).should_error(EvalError::User(list![

@@ -2,6 +2,7 @@
 pub mod value;
 pub mod eval;
 pub mod parser;
+pub mod predef;
 
 pub fn parse(src: &str) -> Result<value::Value, parser::ParseError> {
     src.parse::<value::Value>()
@@ -13,7 +14,9 @@ pub fn parse_all(src: &str) -> Result<Vec<value::Value>, parser::ParseError> {
 }
 
 pub fn predef() -> eval::GlobalEnv {
-    eval::GlobalEnv::predef()
+    let mut global = eval::GlobalEnv::new();
+    predef::load(&mut global);
+    global
 }
 
 pub fn eval(
