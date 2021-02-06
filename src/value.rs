@@ -1,6 +1,6 @@
 use crate::eval::Ast;
 use crate::eval::EvalError;
-use crate::eval::Result;
+use crate::eval::EvalResult;
 use crate::local_env::LocalEnv;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -34,7 +34,7 @@ pub enum RefValue {
 
 #[derive(Clone)]
 #[allow(clippy::type_complexity)]
-pub struct Fun(pub Rc<dyn for<'a> Fn(&'a [Value]) -> Result>);
+pub struct Fun(pub Rc<dyn for<'a> Fn(&'a [Value]) -> EvalResult>);
 
 impl PartialEq for Fun {
     fn eq(&self, rhs: &Self) -> bool {
@@ -45,7 +45,7 @@ impl PartialEq for Fun {
 }
 impl Eq for Fun {}
 impl std::fmt::Debug for Fun {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         fmt.write_str("<primitive function>")
     }
 }
@@ -72,7 +72,7 @@ impl Value {
     }
     pub fn fun<F>(name: &str, f: F) -> Value
     where
-        F: for<'a> Fn(&'a [Value]) -> Result + 'static,
+        F: for<'a> Fn(&'a [Value]) -> EvalResult + 'static,
     {
         Value::Ref(Rc::new(RefValue::Fun {
             name: name.to_string(),
@@ -234,12 +234,9 @@ impl Value {
         }
         (values, rest)
     }
-    pub fn collect_improper<'a, F, T, E>(
-        &'a self,
-        f: F,
-    ) -> std::result::Result<(Vec<T>, Option<T>), E>
+    pub fn collect_improper<'a, F, T, E>(&'a self, f: F) -> Result<(Vec<T>, Option<T>), E>
     where
-        F: for<'b> Fn(&'b Value) -> std::result::Result<T, E>,
+        F: for<'b> Fn(&'b Value) -> Result<T, E>,
         T: 'a,
     {
         if self == &Value::Nil {
@@ -265,7 +262,7 @@ impl Value {
 
 // misc functions
 impl Value {
-    pub fn set_car(&self, v: Value, safe: bool) -> Result {
+    pub fn set_car(&self, v: Value, safe: bool) -> EvalResult {
         if safe && !v.is_cyclic_reference_safe() {
             return Err(EvalError::Unsafe);
         }
@@ -280,7 +277,7 @@ impl Value {
             _ => Err(EvalError::IllegalArgument(self.clone())),
         }
     }
-    pub fn set_cdr(&self, v: Value, safe: bool) -> Result {
+    pub fn set_cdr(&self, v: Value, safe: bool) -> EvalResult {
         if safe && !v.is_cyclic_reference_safe() {
             return Err(EvalError::Unsafe);
         }
@@ -301,7 +298,7 @@ fn fmt_list(
     car: &Value,
     cdr: &Value,
     fmt: &mut std::fmt::Formatter,
-) -> std::result::Result<(), std::fmt::Error> {
+) -> Result<(), std::fmt::Error> {
     fmt.write_str("(")?;
     fmt.write_fmt(format_args!("{}", car))?;
     let (heads, tail) = cdr.to_improper_vec();
@@ -321,7 +318,7 @@ fn fmt_list(
 }
 
 impl std::fmt::Display for Value {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
             Value::Int(v) => fmt.write_fmt(format_args!("{}", v)),
             Value::Bool(v) => fmt.write_fmt(format_args!("{}", v)),
@@ -333,7 +330,7 @@ impl std::fmt::Display for Value {
 }
 
 impl std::fmt::Display for RefValue {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
             RefValue::Cons(car, cdr) => {
                 let car = &*car.borrow();

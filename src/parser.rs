@@ -9,7 +9,7 @@ pub enum ParseError {
 }
 
 impl std::fmt::Display for ParseError {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         fmt.write_fmt(format_args!("{:?}", self))
     }
 }

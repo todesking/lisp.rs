@@ -36,7 +36,7 @@ impl EvalError {
 }
 
 impl std::fmt::Display for EvalError {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         let (err, data) = self.to_tuple();
         fmt.write_str(err)?;
         fmt.write_str("[")?;
@@ -75,11 +75,11 @@ pub enum Ast {
     },
 }
 
-fn illegal_argument_error<T>(value: Value) -> std::result::Result<T, EvalError> {
+fn illegal_argument_error<T>(value: Value) -> Result<T, EvalError> {
     Err(EvalError::IllegalArgument(value))
 }
 
-pub fn build_top_ast(expr: &Value) -> std::result::Result<TopAst, EvalError> {
+pub fn build_top_ast(expr: &Value) -> Result<TopAst, EvalError> {
     if let Some((car, cdr)) = expr.to_cons() {
         if let Some("define") = car.as_sym().map(|r| r.as_ref()) {
             if let Some((name, value)) = cdr.to_list2() {
@@ -102,7 +102,7 @@ pub fn build_top_ast(expr: &Value) -> std::result::Result<TopAst, EvalError> {
         Ok(TopAst::Expr(ast))
     }
 }
-pub fn build_ast(expr: &Value) -> std::result::Result<Ast, EvalError> {
+pub fn build_ast(expr: &Value) -> Result<Ast, EvalError> {
     match expr {
         Value::Int(n) => Ok(Ast::Const(Value::int(*n))),
         Value::Bool(v) => Ok(Ast::Const(Value::bool(*v))),
@@ -116,7 +116,7 @@ pub fn build_ast(expr: &Value) -> std::result::Result<Ast, EvalError> {
     }
 }
 
-fn build_ast_from_cons(car: &Value, cdr: &Value) -> std::result::Result<Ast, EvalError> {
+fn build_ast_from_cons(car: &Value, cdr: &Value) -> Result<Ast, EvalError> {
     match car {
         Value::Sym(name) if name.as_ref() == "quote" => {
             if let Some(x) = cdr.to_list1() {
@@ -145,7 +145,7 @@ fn build_ast_from_cons(car: &Value, cdr: &Value) -> std::result::Result<Ast, Eva
                 let bodies = bodies
                     .iter()
                     .map(|v| build_ast(v))
-                    .collect::<std::result::Result<Rc<[Ast]>, EvalError>>()?;
+                    .collect::<Result<Rc<[Ast]>, EvalError>>()?;
                 let expr = Rc::new(build_ast(expr)?);
                 Ok(Ast::Lambda {
                     param_names,
@@ -182,7 +182,7 @@ fn build_ast_from_cons(car: &Value, cdr: &Value) -> std::result::Result<Ast, Eva
     }
 }
 
-fn build_ast_set_local(expr: &Value, safe_only: bool) -> std::result::Result<Ast, EvalError> {
+fn build_ast_set_local(expr: &Value, safe_only: bool) -> Result<Ast, EvalError> {
     if let Some((name, value)) = expr.to_list2() {
         let name = name.as_sym().ok_or(EvalError::SymbolRequired)?;
         let name = name.to_string();
@@ -198,14 +198,14 @@ fn build_ast_set_local(expr: &Value, safe_only: bool) -> std::result::Result<Ast
     }
 }
 
-pub type Result = std::result::Result<Value, EvalError>;
+pub type EvalResult = Result<Value, EvalError>;
 
-pub fn eval(e: &Value, global: &mut GlobalEnv) -> Result {
+pub fn eval(e: &Value, global: &mut GlobalEnv) -> EvalResult {
     let ast = build_top_ast(e)?;
     eval_top(&ast, global)
 }
 
-fn eval_top(top: &TopAst, global: &mut GlobalEnv) -> Result {
+fn eval_top(top: &TopAst, global: &mut GlobalEnv) -> EvalResult {
     match top {
         TopAst::Define(name, value) => {
             let value = eval_local_loop(value, global, None)?;
@@ -222,10 +222,10 @@ enum Cont {
 }
 
 impl Cont {
-    fn ok_ret(v: Value) -> std::result::Result<Cont, EvalError> {
+    fn ok_ret(v: Value) -> Result<Cont, EvalError> {
         Ok(Cont::Ret(v))
     }
-    fn ok_cont(f: Value, args: Vec<Value>) -> std::result::Result<Cont, EvalError> {
+    fn ok_cont(f: Value, args: Vec<Value>) -> Result<Cont, EvalError> {
         Ok(Cont::Cont(f, args))
     }
 }
@@ -234,7 +234,7 @@ fn eval_local_loop(
     ast: &Ast,
     global: &mut GlobalEnv,
     local: Option<&Rc<RefCell<LocalEnv>>>,
-) -> Result {
+) -> EvalResult {
     let mut res = eval_local(ast, global, local)?;
     loop {
         match res {
@@ -248,7 +248,7 @@ fn eval_local(
     ast: &Ast,
     global: &mut GlobalEnv,
     local: Option<&Rc<RefCell<LocalEnv>>>,
-) -> std::result::Result<Cont, EvalError> {
+) -> Result<Cont, EvalError> {
     match ast {
         Ast::Const(v) => Cont::ok_ret(v.clone()),
         Ast::Lookup(key) => local
@@ -330,7 +330,7 @@ fn bind_args(
     rest_name: Option<Rc<str>>,
     args: &[Value],
     parent: Option<Rc<RefCell<LocalEnv>>>,
-) -> std::result::Result<LocalEnv, EvalError> {
+) -> Result<LocalEnv, EvalError> {
     let invalid_argument_size = (rest_name.is_none() && param_names.len() != args.len())
         || (rest_name.is_some() && param_names.len() > args.len());
     if invalid_argument_size {
@@ -349,11 +349,7 @@ fn bind_args(
     }
 }
 
-fn eval_apply(
-    f: &Value,
-    args: &[Value],
-    global: &mut GlobalEnv,
-) -> std::result::Result<Cont, EvalError> {
+fn eval_apply(f: &Value, args: &[Value], global: &mut GlobalEnv) -> Result<Cont, EvalError> {
     match f {
         Value::Ref(r) => match r.as_ref() {
             RefValue::Lambda {
@@ -387,7 +383,7 @@ fn eval_apply(
 mod test {
     use super::*;
 
-    fn eval_str(s: &str, env: &mut GlobalEnv) -> Result {
+    fn eval_str(s: &str, env: &mut GlobalEnv) -> EvalResult {
         let expr = s.parse::<Value>().expect("should valid sexpr");
         eval(&expr, env)
     }
@@ -397,7 +393,7 @@ mod test {
         fn should_ok<T: Into<Value>>(&self, value: T);
         fn should_nil(&self);
     }
-    impl Assertion for Result {
+    impl Assertion for EvalResult {
         fn should_error(&self, err: EvalError) {
             assert_eq!(self, &Err(err));
         }
