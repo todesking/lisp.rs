@@ -122,6 +122,9 @@ impl GlobalEnv {
     pub fn get(&self, id: usize) -> &Value {
         &self.values[id]
     }
+    pub fn set_by_id(&mut self, id: usize, value: Value) {
+        self.values[id] = value;
+    }
     pub fn set<T: Into<String>>(&mut self, key: T, value: Value) {
         let key = key.into();
         if let Some(id) = self.lookup_global_id(&key) {

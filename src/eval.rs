@@ -72,6 +72,11 @@ pub enum Ast {
         value: Box<Ast>,
         safe_only: bool,
     },
+    SetGlobal {
+        name: String,
+        id: usize,
+        value: Box<Ast>,
+    },
     CatchError {
         handler: Box<Ast>,
         expr: Box<Ast>,
@@ -114,6 +119,9 @@ impl<'a> StaticEnv<'a> {
                 .map(|(_, id)| VarRef::Global(*id))
                 .or_else(|| self.global.lookup_global_id(name).map(VarRef::Global))
         }
+    }
+    fn lookup_global_id(&self, name: &str) -> Option<usize> {
+        self.global.lookup_global_id(name)
     }
     fn extended<'b>(&self, names: impl Iterator<Item = &'b str>) -> StaticEnv<'a> {
         let mut env = StaticEnv {
@@ -222,6 +230,7 @@ fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast,
         Value::Sym(name) if name.as_ref() == "unsafe-set-local!" => {
             build_ast_set_local(cdr, false, env)
         }
+        Value::Sym(name) if name.as_ref() == "set-global!" => build_ast_set_global(cdr, env),
         Value::Sym(name) if name.as_ref() == "catch-error" => {
             if let Some((handler, expr)) = cdr.to_list2() {
                 let handler = build_ast(&handler, env).map(Box::new)?;
@@ -257,6 +266,21 @@ fn build_ast_set_local(expr: &Value, safe_only: bool, env: &StaticEnv) -> Result
             value,
             safe_only,
         })
+    } else {
+        illegal_argument_error(expr.clone())
+    }
+}
+
+fn build_ast_set_global(expr: &Value, env: &StaticEnv) -> Result<Ast, EvalError> {
+    if let Some((name, value)) = expr.to_list2() {
+        let name = name.as_sym().ok_or(EvalError::SymbolRequired)?;
+        let name = name.as_ref().to_owned();
+        let id = env
+            .lookup_global_id(&name)
+            .ok_or_else(|| EvalError::VariableNotFound(name.clone()))?;
+        let value = build_ast(&value, env)?;
+        let value = Box::new(value);
+        Ok(Ast::SetGlobal { name, id, value })
     } else {
         illegal_argument_error(expr.clone())
     }
@@ -376,6 +400,11 @@ fn eval_local(
                     }
                 },
             )
+        }
+        Ast::SetGlobal { id, value, .. } => {
+            let value = eval_local_loop(value, global, local)?;
+            global.set_by_id(*id, value);
+            Cont::ok_ret(Value::nil())
         }
         Ast::CatchError { handler, expr } => match eval_local_loop(expr, global, local) {
             Ok(value) => Cont::ok_ret(value),
