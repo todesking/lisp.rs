@@ -531,12 +531,6 @@ mod test {
         eval_str("(f2 1 'a)", &mut env).should_error(EvalError::InvalidArg);
         eval_str("(f2 1 2)", &mut env).should_ok(3);
 
-        env.set("sum", Value::fun_fold("sum", 0, |a, x| a + x));
-        eval_str("(sum)", &mut env).should_ok(0);
-        eval_str("(sum 1)", &mut env).should_ok(1);
-        eval_str("(sum 1 2)", &mut env).should_ok(3);
-        eval_str("(sum 'x)", &mut env).should_error(EvalError::InvalidArg);
-
         env.set("sum1", Value::fun_reduce("sum1", |a: i32, x: i32| a + x));
         eval_str("(sum1)", &mut env).should_error(EvalError::IllegalArgument(list![]));
         eval_str("(sum1 'x)", &mut env).should_error(EvalError::InvalidArg);
