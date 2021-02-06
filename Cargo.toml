@@ -17,5 +17,5 @@ default = ["repl"]
 repl = ["rustyline"]
 
 [[bench]]
-name = "fact"
+name = "fib"
 harness = false
