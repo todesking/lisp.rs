@@ -11,14 +11,14 @@ pub enum Value {
     Int(i32),
     Sym(Rc<str>),
     Nil,
-    Cons(Rc<Value>, Rc<Value>),
     Ref(Rc<RefValue>),
 }
 
 // TODO: enum ValueRef { Box, Rc }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum RefValue {
+    Cons(RefCell<Value>, RefCell<Value>),
     Lambda {
         param_names: Vec<Rc<str>>,
         rest_name: Option<Rc<str>>,
@@ -61,7 +61,10 @@ impl Value {
         Value::Nil
     }
     pub fn cons<T1: Into<Value>, T2: Into<Value>>(car: T1, cdr: T2) -> Value {
-        Value::Cons(Rc::new(car.into()), Rc::new(cdr.into()))
+        Value::ref_value(RefValue::Cons(
+            RefCell::new(car.into()),
+            RefCell::new(cdr.into()),
+        ))
     }
     pub fn sym(name: &str) -> Value {
         Value::Sym(Rc::from(name))
@@ -87,11 +90,7 @@ impl Value {
         self == &Value::Nil
     }
     pub fn is_cyclic_reference_safe(&self) -> bool {
-        match self {
-            Value::Cons(..) => false,
-            Value::Ref(..) => false,
-            _ => true,
-        }
+        !matches!(self, Value::Ref(..))
     }
     pub fn as_sym(&self) -> Option<&Rc<str>> {
         match self {
@@ -99,31 +98,34 @@ impl Value {
             _ => None,
         }
     }
-    pub fn as_tuple1(&self) -> Option<&Value> {
+    pub fn to_list1(&self) -> Option<Value> {
+        let (car, cdr) = self.to_cons()?;
+        if cdr == Value::Nil {
+            Some(car)
+        } else {
+            None
+        }
+    }
+    pub fn to_list2(&self) -> Option<(Value, Value)> {
+        let (x1, xs) = self.to_cons()?;
+        let x2 = xs.to_list1()?;
+        Some((x1, x2))
+    }
+    pub fn to_list3(&self) -> Option<(Value, Value, Value)> {
+        let (x1, xs) = self.to_cons()?;
+        let (x2, x3) = xs.to_list2()?;
+        Some((x1, x2, x3))
+    }
+    pub fn to_cons(&self) -> Option<(Value, Value)> {
         match self {
-            Value::Cons(car, cdr) if cdr.as_ref() == &Value::Nil => Some(car),
+            Value::Ref(r) => match r.as_ref() {
+                RefValue::Cons(car, cdr) => Some((car.borrow().clone(), cdr.borrow().clone())),
+                _ => None,
+            },
             _ => None,
         }
     }
-    pub fn as_tuple2(&self) -> Option<(&Value, &Value)> {
-        match self {
-            Value::Cons(car, cdr) => cdr.as_tuple1().map(|x| (car.as_ref(), x)),
-            _ => None,
-        }
-    }
-    pub fn as_tuple3(&self) -> Option<(&Value, &Value, &Value)> {
-        match self {
-            Value::Cons(car, cdr) => cdr.as_tuple2().map(|(x1, x2)| (car.as_ref(), x1, x2)),
-            _ => None,
-        }
-    }
-    pub fn as_cons(&self) -> Option<(&Value, &Value)> {
-        match self {
-            Value::Cons(car, cdr) => Some((car, cdr)),
-            _ => None,
-        }
-    }
-    pub fn to_vec(&self) -> Option<Vec<&Value>> {
+    pub fn to_vec(&self) -> Option<Vec<Value>> {
         let (values, tail) = self.to_improper_vec();
         if tail.is_nil() {
             Some(values)
@@ -131,12 +133,12 @@ impl Value {
             None
         }
     }
-    pub fn to_improper_vec(&self) -> (Vec<&Value>, &Value) {
-        let mut rest = self;
+    pub fn to_improper_vec(&self) -> (Vec<Value>, Value) {
+        let mut rest = self.clone();
         let mut values = Vec::new();
-        while let Value::Cons(car, cdr) = rest {
-            rest = cdr.as_ref();
-            values.push(car.as_ref());
+        while let Some((car, cdr)) = rest.to_cons() {
+            rest = cdr;
+            values.push(car);
         }
         (values, rest)
     }
@@ -145,24 +147,24 @@ impl Value {
         f: F,
     ) -> std::result::Result<(Vec<T>, Option<T>), E>
     where
-        F: Fn(&'a Value) -> std::result::Result<T, E>,
+        F: for<'b> Fn(&'b Value) -> std::result::Result<T, E>,
         T: 'a,
     {
         if self == &Value::Nil {
             return Ok((vec![], None));
         }
 
-        let mut rest = self;
+        let mut rest = self.clone();
         let mut values = Vec::new();
-        while let Value::Cons(car, cdr) = rest {
+        while let Some((car, cdr)) = rest.to_cons() {
             rest = cdr;
-            let v = f(car)?;
+            let v = f(&car)?;
             values.push(v);
         }
         match rest {
             Value::Nil => Ok((values, None)),
             x => {
-                let v = f(x)?;
+                let v = f(&x)?;
                 Ok((values, Some(v)))
             }
         }
@@ -258,12 +260,15 @@ impl Value {
 }
 
 fn fmt_list(
-    value: &Value,
+    car: &Value,
+    cdr: &Value,
     fmt: &mut std::fmt::Formatter,
 ) -> std::result::Result<(), std::fmt::Error> {
     fmt.write_str("(")?;
-    let (heads, tail) = value.to_improper_vec();
+    fmt.write_fmt(format_args!("{}", car))?;
+    let (heads, tail) = cdr.to_improper_vec();
     if let Some((last, heads)) = heads.split_last() {
+        fmt.write_str(" ")?;
         for x in heads {
             fmt.write_fmt(format_args!("{}", x))?;
             fmt.write_str(" ")?;
@@ -284,18 +289,6 @@ impl std::fmt::Display for Value {
             Value::Bool(v) => fmt.write_fmt(format_args!("{}", v)),
             Value::Sym(v) => fmt.write_str(v.as_ref()),
             Value::Nil => fmt.write_str("()"),
-            Value::Cons(car, cdr) => {
-                if car.as_ref() == &Value::sym("quote") {
-                    if let Some(v) = cdr.as_tuple1() {
-                        fmt.write_str("'")?;
-                        v.fmt(fmt)
-                    } else {
-                        fmt_list(self, fmt)
-                    }
-                } else {
-                    fmt_list(self, fmt)
-                }
-            }
             Value::Ref(r) => fmt.write_fmt(format_args!("{}", r)),
         }
     }
@@ -304,6 +297,20 @@ impl std::fmt::Display for Value {
 impl std::fmt::Display for RefValue {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         match self {
+            RefValue::Cons(car, cdr) => {
+                let car = &*car.borrow();
+                let cdr = &*cdr.borrow();
+                if car == &Value::sym("quote") {
+                    if let Some(v) = cdr.to_list1() {
+                        fmt.write_str("'")?;
+                        v.fmt(fmt)
+                    } else {
+                        fmt_list(&car, &cdr, fmt)
+                    }
+                } else {
+                    fmt_list(&car, &cdr, fmt)
+                }
+            }
             RefValue::Lambda {
                 param_names,
                 rest_name,

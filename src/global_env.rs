@@ -94,8 +94,8 @@ impl GlobalEnv {
             Value::fun("car", |args| {
                 if args.len() != 1 {
                     Err(EvalError::IllegalArgument(Value::list(args)))
-                } else if let Some((car, _)) = args[0].as_cons() {
-                    Ok(car.clone())
+                } else if let Some((car, _)) = args[0].to_cons() {
+                    Ok(car)
                 } else {
                     Err(EvalError::InvalidArg)
                 }
@@ -106,8 +106,8 @@ impl GlobalEnv {
             Value::fun("cdr", |args| {
                 if args.len() != 1 {
                     Err(EvalError::IllegalArgument(Value::list(args)))
-                } else if let Some((_, cdr)) = args[0].as_cons() {
-                    Ok(cdr.clone())
+                } else if let Some((_, cdr)) = args[0].to_cons() {
+                    Ok(cdr)
                 } else {
                     Err(EvalError::InvalidArg)
                 }
