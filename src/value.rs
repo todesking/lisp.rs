@@ -86,6 +86,36 @@ impl Value {
             .rev()
             .fold(Value::nil(), |a, x| Value::cons(x.clone(), a))
     }
+    pub fn set_car(&self, v: Value, safe: bool) -> Result {
+        if safe && !v.is_cyclic_reference_safe() {
+            return Err(EvalError::Unsafe);
+        }
+        match self {
+            Value::Ref(r) => match r.as_ref() {
+                RefValue::Cons(target, _) => {
+                    *target.borrow_mut() = v;
+                    Ok(Value::nil())
+                }
+                _ => Err(EvalError::IllegalArgument(self.clone())),
+            },
+            _ => Err(EvalError::IllegalArgument(self.clone())),
+        }
+    }
+    pub fn set_cdr(&self, v: Value, safe: bool) -> Result {
+        if safe && !v.is_cyclic_reference_safe() {
+            return Err(EvalError::Unsafe);
+        }
+        match self {
+            Value::Ref(r) => match r.as_ref() {
+                RefValue::Cons(_, target) => {
+                    *target.borrow_mut() = v;
+                    Ok(Value::nil())
+                }
+                _ => Err(EvalError::IllegalArgument(self.clone())),
+            },
+            _ => Err(EvalError::IllegalArgument(self.clone())),
+        }
+    }
     pub fn is_nil(&self) -> bool {
         self == &Value::Nil
     }

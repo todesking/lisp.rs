@@ -113,6 +113,10 @@ impl GlobalEnv {
                 }
             }),
         );
+        global.set_fun2("set-car!", |x, v| x.set_car(v.clone(), true));
+        global.set_fun2("set-cdr!", |x, v| x.set_cdr(v.clone(), true));
+        global.set_fun2("unsafe-set-car!", |x, v| x.set_car(v.clone(), false));
+        global.set_fun2("unsafe-set-cdr!", |x, v| x.set_cdr(v.clone(), false));
 
         global
     }
@@ -128,6 +132,18 @@ impl GlobalEnv {
     {
         let value = Value::fun(name, f);
         self.set(name.to_string(), value);
+    }
+    pub fn set_fun2<F>(&mut self, name: &str, f: F)
+    where
+        F: Fn(&Value, &Value) -> Result<Value, crate::eval::EvalError> + 'static,
+    {
+        self.set_fun(name, move |args| {
+            if args.len() != 2 {
+                Err(crate::eval::EvalError::IllegalArgument(Value::list(args)))
+            } else {
+                f(&args[0], &args[1])
+            }
+        })
     }
     pub fn ls(&self) -> impl Iterator<Item = &str> {
         self.values.keys().map(|s| s.as_ref())
