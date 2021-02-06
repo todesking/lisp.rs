@@ -5,13 +5,18 @@ use crate::local_env::LocalEnv;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum Value {
     Bool(bool),
     Int(i32),
     Sym(Rc<str>),
     Nil,
     Ref(Rc<RefValue>),
+}
+impl std::fmt::Debug for Value {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        fmt.write_fmt(format_args!("{}", self))
+    }
 }
 
 // TODO: enum ValueRef { Box, Rc }

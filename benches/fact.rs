@@ -2,6 +2,7 @@ use criterion::Criterion;
 use criterion::{criterion_group, criterion_main};
 
 use lisprs::eval;
+use lisprs::eval_str_or_panic;
 use lisprs::global_env::GlobalEnv;
 use lisprs::list;
 use lisprs::parser::Parser;
@@ -15,16 +16,15 @@ fn run_bench(c: &mut Criterion, n: i32, global: &mut GlobalEnv) {
 }
 
 static FIB_SRC: &str = "
-(lambda (n)
+(define fib (lambda (n)
     (if (eq? n 0) 0
         (if (eq? n 1) 1
-            (+ (fib (- n 1)) (fib (- n 2))))))";
+            (+ (fib (- n 1)) (fib (- n 2)))))))";
 
 fn bench_fib(c: &mut Criterion) {
     let mut parser = Parser::new();
     let mut global = lisprs::predef();
-    let fib = eval(&parser.parse(&FIB_SRC).unwrap(), &mut global).unwrap();
-    global.set("fib", fib);
+    eval_str_or_panic(FIB_SRC, &mut global);
 
     // sanity check
     assert_eq!(

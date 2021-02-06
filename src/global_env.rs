@@ -23,23 +23,6 @@ impl GlobalEnv {
         global.set("false", Value::Bool(false));
 
         global.set_fun("error", |args| Err(EvalError::User(Value::list(args))));
-        eval_str_or_panic(
-            "
-            (define assert-eq
-                (lambda (expected actual)
-                    (if (eq? expected actual) () (error 'assert-eq expected actual))))",
-            &mut global,
-        );
-        eval_str_or_panic(
-            "(define assert-error
-                (lambda (f err)
-                    (assert-eq
-                        (catch-error
-                            (lambda (err x) (cons err x))
-                            (f))
-                        err)))",
-            &mut global,
-        );
 
         global.set("+", Value::fun_reduce("+", |l: i32, r: i32| l + r));
         global.set_fun("-", |args| {
@@ -104,18 +87,45 @@ impl GlobalEnv {
         global.set_fun2("unsafe-set-car!", |x, v| x.set_car(v.clone(), false));
         global.set_fun2("unsafe-set-cdr!", |x, v| x.set_cdr(v.clone(), false));
 
+        eval_str_or_panic(
+            "
+            (define assert-eq
+                (lambda (expected actual)
+                    (if (eq? expected actual) () (error 'assert-eq expected actual))))",
+            &mut global,
+        );
+        eval_str_or_panic(
+            "(define assert-error
+                (lambda (f err)
+                    (assert-eq
+                        (catch-error
+                            (lambda (err x) (cons err x))
+                            (f))
+                        err)))",
+            &mut global,
+        );
+
         global
     }
-    pub fn lookup<T: AsRef<str>>(&self, key: &T) -> Option<Value> {
-        self.ids.get(key.as_ref()).map(|i| self.values[*i].clone())
+    pub fn lookup_global_id(&self, name: &str) -> Option<usize> {
+        self.ids.get(name).copied()
     }
-    pub fn get(&self, id: usize) -> Value {
-        self.values[id].clone()
+
+    pub fn lookup<T: AsRef<str>>(&self, key: &T) -> Option<&Value> {
+        self.lookup_global_id(key.as_ref()).map(|i| &self.values[i])
+    }
+
+    pub fn next_id(&self) -> usize {
+        self.values.len()
+    }
+
+    pub fn get(&self, id: usize) -> &Value {
+        &self.values[id]
     }
     pub fn set<T: Into<String>>(&mut self, key: T, value: Value) {
         let key = key.into();
-        if let Some(id) = self.ids.get(&key) {
-            self.values[*id] = value;
+        if let Some(id) = self.lookup_global_id(&key) {
+            self.values[id] = value;
         } else {
             self.values.push(value);
             self.ids.insert(key, self.values.len() - 1);
