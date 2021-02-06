@@ -1,5 +1,5 @@
 use lisprs::eval;
-use lisprs::global_env::GlobalEnv;
+use lisprs::eval::GlobalEnv;
 
 use lisprs::value::Value;
 

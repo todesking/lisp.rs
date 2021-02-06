@@ -2,8 +2,8 @@ use criterion::Criterion;
 use criterion::{criterion_group, criterion_main};
 
 use lisprs::eval;
+use lisprs::eval::GlobalEnv;
 use lisprs::eval_str_or_panic;
-use lisprs::global_env::GlobalEnv;
 use lisprs::list;
 use lisprs::parser::Parser;
 use lisprs::value::Value;

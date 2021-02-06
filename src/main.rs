@@ -3,7 +3,7 @@
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 
-use lisprs::global_env::GlobalEnv;
+use lisprs::eval::GlobalEnv;
 use lisprs::parser::Parser;
 
 struct Ctx {

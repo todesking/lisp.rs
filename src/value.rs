@@ -1,7 +1,7 @@
 use crate::eval::Ast;
 use crate::eval::EvalError;
 use crate::eval::EvalResult;
-use crate::local_env::LocalEnv;
+use crate::eval::LocalEnv;
 use std::cell::RefCell;
 use std::rc::Rc;
 
