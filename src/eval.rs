@@ -17,6 +17,7 @@ pub enum EvalError {
     CantApply(Value, Box<[Value]>),
     Unsafe,
     User(Value),
+    DefineInLocalContext,
 }
 
 impl EvalError {
@@ -29,6 +30,7 @@ impl EvalError {
             EvalError::CantApply(f, args) => ("CantApply", list![f.clone(), Value::list(args)]),
             EvalError::Unsafe => ("Unsafe", Value::nil()),
             EvalError::User(value) => ("User", value.clone()),
+            EvalError::DefineInLocalContext => ("DefineInLocalContext", Value::nil()),
         }
     }
 }
@@ -45,9 +47,14 @@ impl std::fmt::Display for EvalError {
 impl std::error::Error for EvalError {}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TopAst {
+    Define(String, Ast),
+    Expr(Ast),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Ast {
     Const(Value),
-    Define(String, Box<Ast>),
     Lookup(String),
     If(Box<Ast>, Box<Ast>, Box<Ast>),
     Lambda {
@@ -72,6 +79,29 @@ fn illegal_argument_error<T>(value: Value) -> std::result::Result<T, EvalError> 
     Err(EvalError::IllegalArgument(value))
 }
 
+pub fn build_top_ast(expr: &Value) -> std::result::Result<TopAst, EvalError> {
+    if let Some((car, cdr)) = expr.to_cons() {
+        if let Some("define") = car.as_sym().map(|r| r.as_ref()) {
+            if let Some((name, value)) = cdr.to_list2() {
+                match name {
+                    Value::Sym(name) => {
+                        let value = build_ast(&value)?;
+                        Ok(TopAst::Define(name.to_string(), value))
+                    }
+                    _ => Err(EvalError::SymbolRequired),
+                }
+            } else {
+                illegal_argument_error(cdr)
+            }
+        } else {
+            let ast = build_ast(expr)?;
+            Ok(TopAst::Expr(ast))
+        }
+    } else {
+        let ast = build_ast(expr)?;
+        Ok(TopAst::Expr(ast))
+    }
+}
 pub fn build_ast(expr: &Value) -> std::result::Result<Ast, EvalError> {
     match expr {
         Value::Int(n) => Ok(Ast::Const(Value::int(*n))),
@@ -95,19 +125,7 @@ fn build_ast_from_cons(car: &Value, cdr: &Value) -> std::result::Result<Ast, Eva
                 illegal_argument_error(cdr.clone())
             }
         }
-        Value::Sym(name) if name.as_ref() == "define" => {
-            if let Some((name, value)) = cdr.to_list2() {
-                match name {
-                    Value::Sym(name) => {
-                        let value = build_ast(&value)?;
-                        Ok(Ast::Define(name.to_string(), Box::new(value)))
-                    }
-                    _ => Err(EvalError::SymbolRequired),
-                }
-            } else {
-                illegal_argument_error(cdr.clone())
-            }
-        }
+        Value::Sym(name) if name.as_ref() == "define" => Err(EvalError::DefineInLocalContext),
         Value::Sym(name) if name.as_ref() == "if" => {
             if let Some((cond, th, el)) = cdr.to_list3() {
                 let cond = build_ast(&cond)?;
@@ -183,8 +201,19 @@ fn build_ast_set_local(expr: &Value, safe_only: bool) -> std::result::Result<Ast
 pub type Result = std::result::Result<Value, EvalError>;
 
 pub fn eval(e: &Value, global: &mut GlobalEnv) -> Result {
-    let ast = build_ast(e)?;
-    eval_local_loop(&ast, global, None)
+    let ast = build_top_ast(e)?;
+    eval_top(&ast, global)
+}
+
+fn eval_top(top: &TopAst, global: &mut GlobalEnv) -> Result {
+    match top {
+        TopAst::Define(name, value) => {
+            let value = eval_local_loop(value, global, None)?;
+            global.set(name, value);
+            Ok(Value::nil())
+        }
+        TopAst::Expr(value) => eval_local_loop(&value, global, None),
+    }
 }
 
 enum Cont {
@@ -232,11 +261,6 @@ fn eval_local(
             )
             .map(Cont::Ret)
             .ok_or_else(|| EvalError::VariableNotFound(key.to_string())),
-        Ast::Define(name, value) => {
-            let value = eval_local_loop(value, global, local)?;
-            global.set(name, value);
-            Cont::ok_ret(Value::nil())
-        }
         Ast::If(cond, th, el) => {
             let cond = eval_local_loop(cond, global, local)?;
             if let Some(b) = bool::extract(&cond) {
@@ -436,6 +460,9 @@ mod test {
         eval_str("(define 1 2)", &mut env).should_error(EvalError::SymbolRequired);
         eval_str("(define x aaa)", &mut env)
             .should_error(EvalError::VariableNotFound("aaa".into()));
+
+        eval_str("(if true (define x 1) ())", &mut env)
+            .should_error(EvalError::DefineInLocalContext);
     }
 
     #[test]
@@ -496,18 +523,17 @@ mod test {
 
     #[test]
     fn test_if() {
-        let mut env = GlobalEnv::new();
-        env.set("t", Value::Bool(true));
-        env.set("f", Value::Bool(false));
+        let mut env = GlobalEnv::predef();
 
-        eval_str("(if t 1 2)", &mut env).should_ok(1);
-        eval_str("(if f 1 2)", &mut env).should_ok(2);
+        eval_str("(if true 1 2)", &mut env).should_ok(1);
+        eval_str("(if false 1 2)", &mut env).should_ok(2);
 
-        eval_str("(if t (define x 1) (define x 2))", &mut env).should_ok(Value::Nil);
-        eval_str("x", &mut env).should_ok(1);
+        eval_str("(define x '(0))", &mut env).should_nil();
+        eval_str("(if true (set-car! x 1) (set-car! x 2))", &mut env).should_ok(Value::Nil);
+        eval_str("(car x)", &mut env).should_ok(1);
 
-        eval_str("(if f (define x 1) (define x 2))", &mut env).should_ok(Value::Nil);
-        eval_str("x", &mut env).should_ok(2);
+        eval_str("(if false (set-car! x 1) (set-car! x 2))", &mut env).should_ok(Value::Nil);
+        eval_str("(car x)", &mut env).should_ok(2);
     }
 
     #[test]
