@@ -29,7 +29,7 @@ pub enum RefValue {
         rest_name: Option<Rc<str>>,
         bodies: Rc<[Ast]>,
         expr: Rc<Ast>,
-        env: Option<Rc<RefCell<LocalEnv>>>,
+        env: LocalEnv,
     },
     Fun {
         name: String,
@@ -87,9 +87,8 @@ impl Value {
     pub fn ref_value(v: RefValue) -> Value {
         Value::Ref(Rc::new(v))
     }
-    pub fn list(xs: &[Value]) -> Value {
-        xs.iter()
-            .rev()
+    pub fn list<'a>(xs: impl std::iter::DoubleEndedIterator<Item = &'a Value>) -> Value {
+        xs.rev()
             .fold(Value::nil(), |a, x| Value::cons(x.clone(), a))
     }
     // TODO: Use macro to abstract funX functions
@@ -100,7 +99,7 @@ impl Value {
     {
         let fun = move |args: &[Value]| {
             if !args.is_empty() {
-                Err(EvalError::IllegalArgument(Value::list(args)))
+                Err(EvalError::illegal_argument(args))
             } else {
                 let v = f();
                 Ok(v.into())
@@ -116,7 +115,7 @@ impl Value {
     {
         let fun = move |args: &[Value]| {
             if args.len() != 1 {
-                return Err(EvalError::IllegalArgument(Value::list(args)));
+                return Err(EvalError::illegal_argument(args));
             }
             let x1 = T1::extract(&args[0]).ok_or(EvalError::InvalidArg)?;
             let v = f(x1).into();
@@ -133,7 +132,7 @@ impl Value {
     {
         let fun = move |args: &[Value]| {
             if args.len() != 2 {
-                return Err(EvalError::IllegalArgument(Value::list(args)));
+                return Err(EvalError::illegal_argument(args));
             }
             let x1 = T1::extract(&args[0]).ok_or(EvalError::InvalidArg)?;
             let x2 = T2::extract(&args[1]).ok_or(EvalError::InvalidArg)?;
@@ -166,9 +165,7 @@ impl Value {
     {
         let fun = move |args: &[Value]| {
             let mut it = args.iter();
-            let a = it
-                .next()
-                .ok_or_else(|| EvalError::IllegalArgument(Value::list(args)))?;
+            let a = it.next().ok_or_else(|| EvalError::illegal_argument(args))?;
             let mut a = T1::extract(a).ok_or(EvalError::InvalidArg)?;
             for x in it {
                 match T1::extract(x) {
@@ -460,7 +457,7 @@ mod test {
                 rest_name: Some(Rc::from("rest")),
                 bodies: Vec::<Ast>::new().into_iter().collect::<Rc<[Ast]>>(),
                 expr: Rc::new(Ast::Const(Value::nil())),
-                env: None
+                env: LocalEnv::default(),
             })
             .to_string(),
             "#<lambda x . rest>"

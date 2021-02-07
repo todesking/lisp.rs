@@ -27,14 +27,17 @@ pub fn eval(e: &Value, global: &mut GlobalEnv) -> EvalResult {
     eval_top(&ast, global)
 }
 
+type Args = Rc<RefCell<Vec<Value>>>;
+
 fn eval_top(top: &TopAst, global: &mut GlobalEnv) -> EvalResult {
+    let args = Rc::new(RefCell::new(Vec::new()));
     match top {
         TopAst::Define(name, value) => {
-            let value = eval_local_loop(value, global, None)?;
+            let value = eval_local_loop(value, global, &LocalEnv::new(), &args)?;
             global.set(name, value);
             Ok(Value::nil())
         }
-        TopAst::Expr(value) => eval_local_loop(&value, global, None),
+        TopAst::Expr(value) => eval_local_loop(&value, global, &LocalEnv::new(), &args),
     }
 }
 
@@ -52,20 +55,12 @@ impl Cont {
     }
 }
 
-fn illegal_argument_error<T>(value: Value) -> Result<T, EvalError> {
-    Err(EvalError::IllegalArgument(value))
-}
-
-fn eval_local_loop(
-    ast: &Ast,
-    global: &mut GlobalEnv,
-    local: Option<&Rc<RefCell<LocalEnv>>>,
-) -> EvalResult {
-    let mut res = eval_local(ast, global, local)?;
+fn eval_local_loop(ast: &Ast, global: &mut GlobalEnv, local: &LocalEnv, args: &Args) -> EvalResult {
+    let mut res = eval_local(ast, global, local, args)?;
     loop {
         match res {
             Cont::Ret(v) => return Ok(v),
-            Cont::Cont(f, args) => res = eval_apply(&f, args.as_ref(), global)?,
+            Cont::Cont(f, args) => res = eval_apply(&f, args, global)?,
         }
     }
 }
@@ -73,24 +68,22 @@ fn eval_local_loop(
 fn eval_local(
     ast: &Ast,
     global: &mut GlobalEnv,
-    local: Option<&Rc<RefCell<LocalEnv>>>,
+    local: &LocalEnv,
+    args: &Args,
 ) -> Result<Cont, EvalError> {
     match ast {
         Ast::Const(v) => Cont::ok_ret(v.clone()),
         Ast::GetGlobal(global_id) => Cont::ok_ret(global.get(*global_id).clone()),
-        Ast::GetLocal(key) => {
-            let value = local
-                .expect("local env should exist")
-                .borrow()
-                .lookup(key)
-                .expect("local should exist");
+        Ast::GetLocal(depth, index) => {
+            let value = local.get(*depth, *index);
             Cont::ok_ret(value)
         }
+        Ast::GetArgument(index) => Cont::ok_ret(args.as_ref().borrow()[*index].clone()),
         Ast::If(cond, th, el) => {
-            let cond = eval_local_loop(cond, global, local)?;
+            let cond = eval_local_loop(cond, global, local, args)?;
             if let Some(b) = bool::extract(&cond) {
                 let value = if b { th } else { el };
-                eval_local(value, global, local)
+                eval_local(value, global, local, args)
             } else {
                 Err(EvalError::InvalidArg)
             }
@@ -106,81 +99,77 @@ fn eval_local(
                 rest_name: rest_name.clone(),
                 bodies: bodies.clone(),
                 expr: expr.clone(),
-                env: local.cloned(),
+                env: local.extend(args.clone()),
             };
             Cont::ok_ret(Value::ref_value(lambda))
         }
-        Ast::Apply(f, args) => {
-            let f = eval_local_loop(f, global, local)?;
+        Ast::Apply(f, new_args) => {
+            let f = eval_local_loop(f, global, local, args)?;
             let mut arg_values = vec![];
-            for arg in args.iter() {
-                let a = eval_local_loop(arg, global, local)?;
+            for arg in new_args.iter() {
+                let a = eval_local_loop(arg, global, local, args)?;
                 arg_values.push(a);
             }
             Cont::ok_cont(f, arg_values)
         }
         Ast::SetLocal {
-            name,
+            depth,
+            index,
             value,
-            safe_only,
+            ..
         } => {
-            let value = eval_local_loop(value, global, local)?;
-            if *safe_only && !value.is_cyclic_reference_safe() {
-                return Err(EvalError::Unsafe);
-            }
-            local.map_or_else(
-                || Err(EvalError::VariableNotFound(name.clone())),
-                |l| {
-                    if l.borrow_mut().set_if_defined(name, value) {
-                        Cont::ok_ret(Value::nil())
-                    } else {
-                        Err(EvalError::VariableNotFound(name.clone()))
-                    }
-                },
-            )
+            let value = eval_local_loop(value, global, local, args)?;
+            local.set(*depth, *index, value);
+            Cont::ok_ret(Value::nil())
         }
         Ast::SetGlobal { id, value, .. } => {
-            let value = eval_local_loop(value, global, local)?;
+            let value = eval_local_loop(value, global, local, args)?;
             global.set_by_id(*id, value);
             Cont::ok_ret(Value::nil())
         }
-        Ast::CatchError { handler, expr } => match eval_local_loop(expr, global, local) {
+        Ast::SetArg { index, value, .. } => {
+            args.as_ref().borrow_mut()[*index] = eval_local_loop(value, global, local, args)?;
+            Cont::ok_ret(Value::nil())
+        }
+        Ast::EnsureSafe(value) => {
+            let value = eval_local_loop(value, global, local, args)?;
+            if !value.is_cyclic_reference_safe() {
+                Err(EvalError::Unsafe)
+            } else {
+                Cont::ok_ret(value)
+            }
+        }
+        Ast::CatchError { handler, expr } => match eval_local_loop(expr, global, local, args) {
             Ok(value) => Cont::ok_ret(value),
             Err(err) => {
-                let handler = eval_local_loop(handler, global, local)?;
+                let handler = eval_local_loop(handler, global, local, args)?;
                 let (name, err) = err.to_tuple();
-                eval_apply(&handler, &[Value::sym(name), err], global)
+                let args = vec![Value::sym(name), err];
+                eval_apply(&handler, args, global)
             }
         },
         Ast::Error(err) => Err(err.clone()),
     }
 }
 
-fn bind_args(
-    param_names: &[Rc<str>],
-    rest_name: Option<Rc<str>>,
-    args: &[Value],
-    parent: Option<Rc<RefCell<LocalEnv>>>,
-) -> Result<LocalEnv, EvalError> {
-    let invalid_argument_size = (rest_name.is_none() && param_names.len() != args.len())
-        || (rest_name.is_some() && param_names.len() > args.len());
-    if invalid_argument_size {
-        illegal_argument_error(Value::list(args))
+fn bind_args(param_count: usize, has_rest: bool, mut args: Vec<Value>) -> Result<Args, EvalError> {
+    if has_rest {
+        if args.len() < param_count {
+            Err(EvalError::illegal_argument(&args))
+        } else {
+            let rest = Value::list(args[param_count..].to_vec().iter());
+            args.truncate(param_count);
+            args.push(rest);
+            Ok(Rc::new(RefCell::new(args)))
+        }
+    } else if args.len() != param_count {
+        Err(EvalError::illegal_argument(&args))
     } else {
-        let mut values = std::collections::HashMap::new();
-        for (k, v) in param_names.iter().zip(args) {
-            values.insert(k.clone(), v.clone());
-        }
-        if let Some(rest_name) = rest_name {
-            let rest = Value::list(&args[param_names.len()..]);
-            values.insert(rest_name, rest);
-        }
-
-        Ok(LocalEnv::new(values, parent))
+        Ok(Rc::new(RefCell::new(args)))
     }
 }
 
-fn eval_apply(f: &Value, args: &[Value], global: &mut GlobalEnv) -> Result<Cont, EvalError> {
+fn eval_apply(f: &Value, args: Vec<Value>, global: &mut GlobalEnv) -> Result<Cont, EvalError> {
     match f {
         Value::Ref(r) => match r.as_ref() {
             RefValue::Lambda {
@@ -190,23 +179,16 @@ fn eval_apply(f: &Value, args: &[Value], global: &mut GlobalEnv) -> Result<Cont,
                 expr,
                 env,
             } => {
-                let local = bind_args(param_names, rest_name.clone(), args, env.clone())?;
-                let local = Rc::new(RefCell::new(local));
+                let args = bind_args(param_names.len(), rest_name.is_some(), args)?;
                 for b in bodies.as_ref() {
-                    eval_local_loop(b, global, Some(&local))?;
+                    eval_local_loop(b, global, env, &args)?;
                 }
-                eval_local(expr, global, Some(&local))
+                eval_local(expr, global, env, &args)
             }
-            RefValue::Fun { fun, .. } => fun.0(args).map(Cont::Ret),
-            RefValue::Cons(..) => Err(EvalError::CantApply(
-                f.clone(),
-                args.iter().cloned().collect(),
-            )),
+            RefValue::Fun { fun, .. } => fun.0(&args).map(Cont::Ret),
+            RefValue::Cons(..) => Err(EvalError::CantApply(f.clone(), args.into_boxed_slice())),
         },
-        _ => Err(EvalError::CantApply(
-            f.clone(),
-            args.iter().cloned().collect(),
-        )),
+        _ => Err(EvalError::CantApply(f.clone(), args.into_boxed_slice())),
     }
 }
 

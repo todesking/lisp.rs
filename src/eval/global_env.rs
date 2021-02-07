@@ -54,7 +54,7 @@ impl GlobalEnv {
     {
         self.set_fun(name, move |args| {
             if args.len() != 1 {
-                Err(EvalError::IllegalArgument(Value::list(args)))
+                Err(EvalError::IllegalArgument(Value::list(args.iter())))
             } else {
                 f(&args[0])
             }
@@ -66,7 +66,7 @@ impl GlobalEnv {
     {
         self.set_fun(name, move |args| {
             if args.len() != 2 {
-                Err(EvalError::IllegalArgument(Value::list(args)))
+                Err(EvalError::IllegalArgument(Value::list(args.iter())))
             } else {
                 f(&args[0], &args[1])
             }

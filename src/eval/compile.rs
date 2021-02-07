@@ -14,7 +14,8 @@ pub enum TopAst {
 pub enum Ast {
     Const(Value),
     GetGlobal(usize),
-    GetLocal(String),
+    GetLocal(usize, usize),
+    GetArgument(usize),
     If(Box<Ast>, Box<Ast>, Box<Ast>),
     Lambda {
         param_names: Vec<Rc<str>>,
@@ -25,14 +26,21 @@ pub enum Ast {
     Apply(Box<Ast>, Vec<Ast>),
     SetLocal {
         name: String,
+        depth: usize,
+        index: usize,
         value: Box<Ast>,
-        safe_only: bool,
+    },
+    SetArg {
+        name: String,
+        index: usize,
+        value: Box<Ast>,
     },
     SetGlobal {
         name: String,
         id: usize,
         value: Box<Ast>,
     },
+    EnsureSafe(Box<Ast>),
     CatchError {
         handler: Box<Ast>,
         expr: Box<Ast>,
@@ -41,14 +49,18 @@ pub enum Ast {
 }
 
 pub enum VarRef {
-    Local(String),
+    Local(usize, usize),
     Global(usize),
+    Argument(usize),
 }
+
 #[derive(Clone)]
 struct StaticEnv<'a> {
     global: &'a GlobalEnv,
     current_global: Option<(String, usize)>,
-    local: std::collections::HashSet<String>,
+    local: std::collections::HashMap<String, (usize, usize)>,
+    local_depth: usize,
+    args: std::collections::HashMap<String, usize>,
 }
 impl<'a> StaticEnv<'a> {
     fn new(global: &GlobalEnv) -> StaticEnv {
@@ -56,6 +68,8 @@ impl<'a> StaticEnv<'a> {
             global,
             current_global: None,
             local: Default::default(),
+            local_depth: 0,
+            args: Default::default(),
         }
     }
     fn new_with_current<'b>(global: &'a GlobalEnv, name: &'b str) -> StaticEnv<'a> {
@@ -63,11 +77,15 @@ impl<'a> StaticEnv<'a> {
             global,
             current_global: Some((name.to_owned(), global.next_id())),
             local: Default::default(),
+            local_depth: 0,
+            args: Default::default(),
         }
     }
     fn lookup(&self, name: &str) -> Option<VarRef> {
-        if self.local.contains(name) {
-            Some(VarRef::Local(name.to_owned()))
+        if let Some(index) = self.args.get(name) {
+            Some(VarRef::Argument(*index))
+        } else if let Some((depth, index)) = self.local.get(name) {
+            Some(VarRef::Local(*depth, *index))
         } else {
             self.current_global
                 .as_ref()
@@ -84,9 +102,14 @@ impl<'a> StaticEnv<'a> {
             global: self.global,
             current_global: self.current_global.clone(),
             local: self.local.clone(),
+            local_depth: self.local_depth + 1,
+            args: Default::default(),
         };
-        for name in names {
-            env.local.insert(name.to_string());
+        for (name, i) in self.args.iter() {
+            env.local.insert(name.clone(), (env.local_depth, *i));
+        }
+        for (i, name) in names.enumerate() {
+            env.args.insert(name.to_string(), i);
         }
         env
     }
@@ -124,8 +147,9 @@ fn build_ast(expr: &Value, env: &StaticEnv) -> Result<Ast, EvalError> {
     match expr {
         Value::Int(..) | Value::Bool(..) | Value::Nil => Ok(Ast::Const(expr.clone())),
         Value::Sym(name) => match env.lookup(name) {
-            Some(VarRef::Local(name)) => Ok(Ast::GetLocal(name)),
+            Some(VarRef::Local(depth, index)) => Ok(Ast::GetLocal(depth, index)),
             Some(VarRef::Global(id)) => Ok(Ast::GetGlobal(id)),
+            Some(VarRef::Argument(index)) => Ok(Ast::GetArgument(index)),
             None => Ok(Ast::Error(EvalError::VariableNotFound(name.to_string()))),
         },
         Value::Ref(r) => match r.as_ref() {
@@ -211,17 +235,31 @@ fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast,
     }
 }
 
-fn build_ast_set_local(expr: &Value, safe_only: bool, env: &StaticEnv) -> Result<Ast, EvalError> {
+fn build_ast_set_local(expr: &Value, safe: bool, env: &StaticEnv) -> Result<Ast, EvalError> {
     if let Some((name, value)) = expr.to_list2() {
         let name = name.as_sym().ok_or(EvalError::SymbolRequired)?;
         let name = name.to_string();
         let value = build_ast(&value, env)?;
         let value = Box::new(value);
-        Ok(Ast::SetLocal {
-            name,
-            value,
-            safe_only,
-        })
+        let value = if safe {
+            Box::new(Ast::EnsureSafe(value))
+        } else {
+            value
+        };
+        if let Some(var) = env.lookup(&name) {
+            match var {
+                VarRef::Global(..) => Ok(Ast::Error(EvalError::VariableNotFound(name))),
+                VarRef::Local(depth, index) => Ok(Ast::SetLocal {
+                    name,
+                    depth,
+                    index,
+                    value,
+                }),
+                VarRef::Argument(index) => Ok(Ast::SetArg { name, index, value }),
+            }
+        } else {
+            Ok(Ast::Error(EvalError::VariableNotFound(name)))
+        }
     } else {
         illegal_argument_error(expr.clone())
     }
