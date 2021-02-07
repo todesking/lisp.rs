@@ -27,3 +27,11 @@
 (unsafe-set-car! x '(1))
 (unsafe-set-cdr! x '(2))
 (assert-eq x '((1) . (2)))
+
+(assert-eq
+  (map (lambda (x) x) ())
+  ())
+(assert-eq
+  (map (lambda (x) (+ x 1))
+       '(10 20 30 40))
+  '(11 21 31 41))

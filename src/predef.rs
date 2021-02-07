@@ -85,4 +85,12 @@ pub fn load(global: &mut GlobalEnv) {
                         err)))",
         global,
     );
+    eval_str_or_panic("(define nil? (lambda (x) (eq? x ())))", global);
+    eval_str_or_panic(
+        "(define map (lambda (f l)
+            (if (nil? l)
+              l
+              (cons (f (car l)) (map f (cdr l))))))",
+        global,
+    );
 }
