@@ -272,6 +272,9 @@ mod test {
             .should_error(EvalError::VariableNotFound("aaa".into()));
 
         eval_str("(if 1 (define x 1) ())", &mut env).should_error(EvalError::DefineInLocalContext);
+
+        eval_str("(define loop loop)", &mut env)
+            .should_error(EvalError::VariableNotFound("loop".to_owned()));
     }
 
     #[test]

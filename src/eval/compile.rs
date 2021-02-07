@@ -57,7 +57,7 @@ pub enum VarRef {
 #[derive(Clone)]
 struct StaticEnv<'a> {
     global: &'a GlobalEnv,
-    current_global: Option<(String, usize)>,
+    current_global: Option<(String, usize, bool)>,
     local: std::collections::HashMap<String, (usize, usize)>,
     local_depth: usize,
     args: std::collections::HashMap<String, usize>,
@@ -75,7 +75,7 @@ impl<'a> StaticEnv<'a> {
     fn new_with_current<'b>(global: &'a GlobalEnv, name: &'b str) -> StaticEnv<'a> {
         StaticEnv {
             global,
-            current_global: Some((name.to_owned(), global.next_id())),
+            current_global: Some((name.to_owned(), global.next_id(), false)),
             local: Default::default(),
             local_depth: 0,
             args: Default::default(),
@@ -89,8 +89,8 @@ impl<'a> StaticEnv<'a> {
         } else {
             self.current_global
                 .as_ref()
-                .filter(|(gname, _)| gname == name)
-                .map(|(_, id)| VarRef::Global(*id))
+                .filter(|(gname, _, initialized)| gname == name && *initialized)
+                .map(|(_, id, _)| VarRef::Global(*id))
                 .or_else(|| self.global.lookup_global_id(name).map(VarRef::Global))
         }
     }
@@ -100,7 +100,10 @@ impl<'a> StaticEnv<'a> {
     fn extended<'b>(&self, names: impl Iterator<Item = &'b str>) -> StaticEnv<'a> {
         let mut env = StaticEnv {
             global: self.global,
-            current_global: self.current_global.clone(),
+            current_global: self
+                .current_global
+                .clone()
+                .map(|(name, id, _)| (name, id, true)),
             local: self.local.clone(),
             local_depth: self.local_depth + 1,
             args: Default::default(),
