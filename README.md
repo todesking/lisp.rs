@@ -21,6 +21,7 @@ Just a toy language.
   * Equality: `eq?`
   * List operations: `cons`, `list`
   * User-controlled error: `(error error-kind payload)`
+  * [primitive functions](./src/predef.rs), [standard library](./src/predef.lisp), [additional functions](./src/repl.lisp)
 
 ## Usage
 
