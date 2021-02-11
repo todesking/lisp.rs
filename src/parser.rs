@@ -168,108 +168,59 @@ fn parse_list<'p, 's>(p: &'p mut Parser, s: &'s str) -> ParseResult<'s> {
 mod test {
     use super::*;
 
+    fn parse(s: &str) -> Result<Value, ParseError> {
+        s.parse()
+    }
+    trait Assertions {
+        fn should_ok<V: Into<Value>>(&self, v: V);
+        fn should_error(&self, e: ParseError);
+    }
+    impl Assertions for Result<Value, ParseError> {
+        fn should_ok<V: Into<Value>>(&self, v: V) {
+            assert_eq!(self, &Ok(v.into()));
+        }
+        fn should_error(&self, e: ParseError) {
+            assert_eq!(self, &Err(e));
+        }
+    }
+
     #[test]
     fn test_num() {
-        let e = "1".parse();
-        assert_eq!(e, Ok(Value::Int(1)));
-
-        let e = "123".parse();
-        assert_eq!(e, Ok(Value::Int(123)));
-
-        let e = "   123".parse();
-        assert_eq!(e, Ok(Value::Int(123)));
-
-        let e = "123    ".parse();
-        assert_eq!(e, Ok(Value::Int(123)));
-
-        let e: Result<Value, ParseError> = "123a".parse();
-        assert_eq!(e, Err(ParseError::Redundant("a".to_owned())));
-
-        let e = "-123".parse();
-        assert_eq!(e, Ok(Value::int(-123)));
+        parse("1").should_ok(1);
+        parse("123").should_ok(123);
+        parse("   123").should_ok(123);
+        parse("123   ").should_ok(123);
+        parse("123a").should_error(ParseError::Redundant("a".to_owned()));
+        parse("-123").should_ok(-123);
     }
 
     #[test]
     fn test_symbol() {
-        let e = "a".parse();
-        assert_eq!(e, Ok(Value::sym("a")));
-
-        let e = "LONG-symbol'name?!?!".parse();
-        assert_eq!(e, Ok(Value::sym("LONG-symbol'name?!?!")));
-
-        let e = "f0".parse();
-        assert_eq!(e, Ok(Value::sym("f0")));
-
-        let e = "+-*/%<>=".parse();
-        assert_eq!(e, Ok(Value::sym("+-*/%<>=")));
+        parse("a").should_ok(Value::sym("a"));
+        parse("LONG-symbol'name?!?!").should_ok(Value::sym("LONG-symbol'name?!?!"));
+        parse("f0").should_ok(Value::sym("f0"));
+        parse("+-*/%<>=").should_ok(Value::sym("+-*/%<>="));
     }
 
     #[test]
     fn test_quote() {
-        let e = "'".parse::<Value>();
-        assert_eq!(e, Err(ParseError::Unexpected("".to_owned())));
-
-        let e = "' 1".parse::<Value>();
-        assert_eq!(e, Err(ParseError::Unexpected(" 1".to_owned())));
-
-        let e = "'1".parse::<Value>();
-        assert_eq!(
-            e,
-            Ok(Value::cons(
-                Value::sym("quote"),
-                Value::cons(Value::Int(1), Value::Nil)
-            ))
-        );
-
-        let e = "'()".parse::<Value>();
-        assert_eq!(
-            e,
-            Ok(Value::cons(
-                Value::sym("quote"),
-                Value::cons(Value::Nil, Value::Nil)
-            ))
-        );
+        parse("'").should_error(ParseError::Unexpected("".to_owned()));
+        parse("' 1").should_error(ParseError::Unexpected(" 1".to_owned()));
+        parse("'1").should_ok(list![Value::sym("quote"), 1]);
+        parse("'()").should_ok(list![Value::sym("quote"), Value::nil()]);
     }
 
     #[test]
     fn test_cons() {
-        let e = "(1.2)".parse();
-        assert_eq!(e, Ok(Value::cons(Value::Int(1), Value::Int(2))));
-
-        let e = "(  3 . 4  )".parse();
-        assert_eq!(e, Ok(Value::cons(Value::Int(3), Value::Int(4))));
+        parse("(1.2)").should_ok(list![1; 2]);
+        parse("(  3 . 4  )").should_ok(list![3; 4]);
     }
 
     #[test]
     fn test_list() {
-        let e = "()".parse();
-        assert_eq!(e, Ok(Value::Nil));
-
-        let e = "(1 2 3)".parse();
-        assert_eq!(
-            e,
-            Ok(Value::cons(
-                Value::Int(1),
-                Value::cons(Value::Int(2), Value::cons(Value::Int(3), Value::Nil))
-            ))
-        );
-
-        let e = "(1 2 . 3)".parse();
-        assert_eq!(
-            e,
-            Ok(Value::cons(
-                Value::Int(1),
-                Value::cons(Value::Int(2), Value::Int(3))
-            ))
-        );
-
-        let e = "(   1 2 . 0   )".parse();
-        assert_eq!(
-            e,
-            Ok(Value::cons(
-                Value::Int(1),
-                Value::cons(Value::Int(2), Value::Int(0))
-            ))
-        );
+        parse("()").should_ok(list![]);
+        parse("(1 2 3)").should_ok(list![1, 2, 3]);
+        parse("(1 2 . 3)").should_ok(list![1,2; 3]);
+        parse("(   1 2 . 0   )").should_ok(list![1, 2; 0]);
     }
 }
