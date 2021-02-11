@@ -343,23 +343,41 @@ impl std::fmt::Display for Value {
     }
 }
 
+fn fmt_cons(
+    car: &Value,
+    cdr: &Value,
+    fmt: &mut std::fmt::Formatter<'_>,
+) -> Result<(), std::fmt::Error> {
+    if let Some(name) = car.as_sym() {
+        let prefix = match name.as_ref() {
+            "quote" => Some("'"),
+            "quasiquote" => Some("`"),
+            "unquote" => Some(","),
+            "unquote-splicing" => Some(",@"),
+            _ => None,
+        };
+        match (prefix, cdr.to_list1()) {
+            (Some(prefix), Some(value)) => fmt_prefix(prefix, &value, fmt),
+            _ => fmt_list(car, cdr, fmt),
+        }
+    } else {
+        fmt_list(car, cdr, fmt)
+    }
+}
+
+fn fmt_prefix(
+    prefix: &str,
+    value: &Value,
+    fmt: &mut std::fmt::Formatter<'_>,
+) -> Result<(), std::fmt::Error> {
+    fmt.write_str(prefix)?;
+    std::fmt::Display::fmt(value, fmt)
+}
+
 impl std::fmt::Display for RefValue {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
-            RefValue::Cons(car, cdr) => {
-                let car = &*car.borrow();
-                let cdr = &*cdr.borrow();
-                if car == &Value::sym("quote") {
-                    if let Some(v) = cdr.to_list1() {
-                        fmt.write_str("'")?;
-                        v.fmt(fmt)
-                    } else {
-                        fmt_list(&car, &cdr, fmt)
-                    }
-                } else {
-                    fmt_list(&car, &cdr, fmt)
-                }
-            }
+            RefValue::Cons(car, cdr) => fmt_cons(&*car.borrow(), &*cdr.borrow(), fmt),
             RefValue::Lambda {
                 param_names,
                 rest_name,
@@ -495,6 +513,10 @@ mod test {
             "#<primitive:f>"
         );
         assert_eq!(list![Value::sym("quote"), 1].to_string(), "'1");
+        assert_eq!(list![Value::sym("quote"), 1, 2].to_string(), "(quote 1 2)");
+        assert_eq!(list![Value::sym("quasiquote"), 1].to_string(), "`1");
+        assert_eq!(list![Value::sym("unquote"), 1].to_string(), ",1");
+        assert_eq!(list![Value::sym("unquote-splicing"), 1].to_string(), ",@1");
     }
 
     #[test]
