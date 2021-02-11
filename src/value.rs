@@ -31,10 +31,22 @@ pub enum RefValue {
         expr: Rc<Ast>,
         env: LocalEnv,
     },
+    RecLambda {
+        lambda_def: Rc<LambdaDef>,
+        env: Rc<LocalEnv>,
+    },
     Fun {
         name: String,
         fun: Fun,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LambdaDef {
+    pub param_names: Vec<Rc<str>>,
+    pub rest_name: Option<Rc<str>>,
+    pub bodies: Rc<[Ast]>,
+    pub expr: Rc<Ast>,
 }
 
 #[derive(Clone)]
@@ -363,6 +375,22 @@ impl std::fmt::Display for RefValue {
                     fmt.write_str(last_param)?;
                 }
                 for r in rest_name {
+                    fmt.write_str(" . ")?;
+                    fmt.write_str(r)?;
+                }
+                fmt.write_str(">")
+            }
+            RefValue::RecLambda { lambda_def, .. } => {
+                fmt.write_str("#<rec-lambda")?;
+                if let Some((last_param, param_names)) = lambda_def.param_names.split_last() {
+                    fmt.write_str(" ")?;
+                    for p in param_names {
+                        fmt.write_str(p)?;
+                        fmt.write_str(" ")?;
+                    }
+                    fmt.write_str(last_param)?;
+                }
+                for r in &lambda_def.rest_name {
                     fmt.write_str(" . ")?;
                     fmt.write_str(r)?;
                 }

@@ -1,16 +1,17 @@
 use crate::eval::EvalError;
 use crate::eval::GlobalEnv;
+use crate::value::LambdaDef;
 use crate::value::RefValue;
 use crate::value::Value;
 use std::rc::Rc;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TopAst {
     Define(String, Ast),
     Expr(Ast),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ast {
     Const(Value),
     GetGlobal(usize),
@@ -46,11 +47,15 @@ pub enum Ast {
         expr: Box<Ast>,
     },
     Error(EvalError),
+    GetRec(usize, usize),
+    LetRec(Vec<LambdaDef>, Vec<Ast>, Box<Ast>),
 }
 
+#[derive(Clone)]
 pub enum VarRef {
-    Local(usize, usize),
     Global(usize),
+    Local(usize, usize),
+    Rec(usize, usize),
     Argument(usize),
 }
 
@@ -58,34 +63,35 @@ pub enum VarRef {
 struct StaticEnv<'a> {
     global: &'a GlobalEnv,
     current_global: Option<(String, usize, bool)>,
-    local: std::collections::HashMap<String, (usize, usize)>,
+    locals: std::collections::HashMap<String, VarRef>,
     local_depth: usize,
-    args: std::collections::HashMap<String, usize>,
+    args: Vec<String>,
+    rec_depth: usize,
 }
 impl<'a> StaticEnv<'a> {
     fn new(global: &GlobalEnv) -> StaticEnv {
         StaticEnv {
             global,
             current_global: None,
-            local: Default::default(),
+            locals: Default::default(),
             local_depth: 0,
             args: Default::default(),
+            rec_depth: 0,
         }
     }
     fn new_with_current<'b>(global: &'a GlobalEnv, name: &'b str) -> StaticEnv<'a> {
         StaticEnv {
             global,
             current_global: Some((name.to_owned(), global.next_id(), false)),
-            local: Default::default(),
+            locals: Default::default(),
             local_depth: 0,
             args: Default::default(),
+            rec_depth: 0,
         }
     }
     fn lookup(&self, name: &str) -> Option<VarRef> {
-        if let Some(index) = self.args.get(name) {
-            Some(VarRef::Argument(*index))
-        } else if let Some((depth, index)) = self.local.get(name) {
-            Some(VarRef::Local(*depth, *index))
+        if let Some(var_ref) = self.locals.get(name) {
+            Some(var_ref.clone())
         } else {
             self.current_global
                 .as_ref()
@@ -97,22 +103,34 @@ impl<'a> StaticEnv<'a> {
     fn lookup_global_id(&self, name: &str) -> Option<usize> {
         self.global.lookup_global_id(name)
     }
-    fn extended<'b>(&self, names: impl Iterator<Item = &'b str>) -> StaticEnv<'a> {
+    fn extended(&self, names: &[Rc<str>], rest_name: &Option<Rc<str>>) -> StaticEnv<'a> {
         let mut env = StaticEnv {
             global: self.global,
             current_global: self
                 .current_global
                 .clone()
                 .map(|(name, id, _)| (name, id, true)),
-            local: self.local.clone(),
+            locals: self.locals.clone(),
             local_depth: self.local_depth + 1,
             args: Default::default(),
+            rec_depth: self.rec_depth,
         };
-        for (name, i) in self.args.iter() {
-            env.local.insert(name.clone(), (env.local_depth, *i));
+        for (i, name) in self.args.iter().enumerate() {
+            env.locals
+                .insert(name.clone(), VarRef::Local(env.local_depth, i));
         }
+        for (i, name) in names.iter().chain(rest_name.iter()).enumerate() {
+            env.args.push(name.to_string());
+            env.locals.insert(name.to_string(), VarRef::Argument(i));
+        }
+        env
+    }
+    fn rec_extended<'b>(&self, names: impl Iterator<Item = &'b str>) -> StaticEnv<'a> {
+        let mut env = self.clone();
+        env.rec_depth += 1;
         for (i, name) in names.enumerate() {
-            env.args.insert(name.to_string(), i);
+            env.locals
+                .insert(name.to_string(), VarRef::Rec(env.rec_depth, i));
         }
         env
     }
@@ -150,15 +168,17 @@ fn build_ast(expr: &Value, env: &StaticEnv) -> Result<Ast, EvalError> {
     match expr {
         Value::Int(..) | Value::Bool(..) | Value::Nil => Ok(Ast::Const(expr.clone())),
         Value::Sym(name) => match env.lookup(name) {
-            Some(VarRef::Local(depth, index)) => Ok(Ast::GetLocal(depth, index)),
             Some(VarRef::Global(id)) => Ok(Ast::GetGlobal(id)),
+            Some(VarRef::Local(depth, index)) => Ok(Ast::GetLocal(depth, index)),
+            Some(VarRef::Rec(depth, index)) => Ok(Ast::GetRec(depth, index)),
             Some(VarRef::Argument(index)) => Ok(Ast::GetArgument(index)),
             None => Ok(Ast::Error(EvalError::VariableNotFound(name.to_string()))),
         },
         Value::Ref(r) => match r.as_ref() {
             RefValue::Cons(car, cdr) => build_ast_from_cons(&car.borrow(), &cdr.borrow(), env),
-            RefValue::Lambda { .. } => unimplemented!(),
-            RefValue::Fun { .. } => unimplemented!(),
+            RefValue::RecLambda { .. } | RefValue::Lambda { .. } | RefValue::Fun { .. } => {
+                Ok(Ast::Const(expr.clone()))
+            }
         },
     }
 }
@@ -189,12 +209,7 @@ fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast,
                     Value::Sym(name) => Ok(name.clone()),
                     _ => Err(EvalError::SymbolRequired),
                 })?;
-                let body_env = env.extended(
-                    param_names
-                        .iter()
-                        .chain(rest_name.iter())
-                        .map(|v| v.as_ref()),
-                );
+                let body_env = env.extended(&param_names, &rest_name);
                 let bodies = bodies
                     .iter()
                     .map(|v| build_ast(v, &body_env))
@@ -223,6 +238,22 @@ fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast,
                 illegal_argument_error(cdr.clone())
             }
         }
+        Value::Sym(name) if name.as_ref() == "letrec" => {
+            let err = || EvalError::IllegalArgument(cdr.clone());
+            let (defs, body) = cdr.to_cons().ok_or_else(err)?;
+            let defs = defs.to_vec().ok_or_else(err)?;
+            let (env, defs) = extract_lambda_defs(&defs, env, err)?;
+            let body = body.to_vec().ok_or_else(err)?;
+            let body: Vec<Ast> = body
+                .iter()
+                .map(|b| build_ast(b, &env))
+                .collect::<Result<Vec<Ast>, EvalError>>()?;
+            let (expr, body) = body.split_last().ok_or_else(err)?;
+            let body = body.to_vec();
+            let expr = Box::new(expr.clone());
+            let defs = defs.into_iter().map(|d| d.1).collect();
+            Ok(Ast::LetRec(defs, body, expr))
+        }
         f => match cdr.to_vec() {
             None => illegal_argument_error(cdr.clone()),
             Some(args) => {
@@ -236,6 +267,70 @@ fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast,
             }
         },
     }
+}
+
+#[allow(clippy::type_complexity)]
+fn extract_lambda_defs<'a, 'b, E: Fn() -> EvalError + Copy>(
+    raw: impl IntoIterator<Item = &'a Value>,
+    env: &'b StaticEnv,
+    err: E,
+) -> Result<(StaticEnv<'b>, Vec<(Rc<str>, LambdaDef)>), EvalError> {
+    let defs = raw
+        .into_iter()
+        .map(|raw| extract_raw_lambda_def(raw).ok_or_else(err))
+        .collect::<Result<Vec<_>, _>>()?;
+    let env = env.rec_extended(defs.iter().map(|(name, ..)| name.as_ref()));
+    let defs = defs
+        .into_iter()
+        .map(|(name, param_names, rest_name, bodies, expr)| {
+            let env = env.extended(&param_names, &rest_name);
+            let bodies = bodies
+                .into_iter()
+                .map(|b| build_ast(&b, &env))
+                .collect::<Result<Vec<_>, _>>()?;
+            let bodies = Rc::from(bodies);
+            let expr = build_ast(&expr, &env)?;
+            let expr = Rc::new(expr);
+            Ok((
+                name,
+                LambdaDef {
+                    param_names,
+                    rest_name,
+                    bodies,
+                    expr,
+                },
+            ))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok((env, defs))
+}
+
+#[allow(clippy::type_complexity)]
+fn extract_raw_lambda_def(
+    raw: &Value,
+) -> Option<(Rc<str>, Vec<Rc<str>>, Option<Rc<str>>, Vec<Value>, Value)> {
+    let (names, bodies) = raw.to_cons()?;
+    let (name, param_names, rest_name) = extract_lambda_names(&names)?;
+    let bodies = bodies.to_vec()?;
+    let (expr, bodies) = bodies.split_last()?;
+    Some((name, param_names, rest_name, bodies.to_vec(), expr.clone()))
+}
+
+#[allow(clippy::type_complexity)]
+fn extract_lambda_names(expr: &Value) -> Option<(Rc<str>, Vec<Rc<str>>, Option<Rc<str>>)> {
+    let (name, params) = expr.to_cons()?;
+    let name = name.as_sym().cloned()?;
+    let (param_names, rest_name) = params.to_improper_vec();
+    let param_names = param_names
+        .iter()
+        .map(|pn| pn.as_sym().cloned())
+        .collect::<Option<Vec<_>>>()?;
+    let rest_name = if rest_name == Value::nil() {
+        None
+    } else {
+        Some(rest_name.as_sym().cloned()?)
+    };
+    Some((name, param_names, rest_name))
 }
 
 fn build_ast_set_local(expr: &Value, safe: bool, env: &StaticEnv) -> Result<Ast, EvalError> {
@@ -258,6 +353,7 @@ fn build_ast_set_local(expr: &Value, safe: bool, env: &StaticEnv) -> Result<Ast,
                     index,
                     value,
                 }),
+                VarRef::Rec(..) => Ok(Ast::Error(EvalError::ReadOnly(name))),
                 VarRef::Argument(index) => Ok(Ast::SetArg { name, index, value }),
             }
         } else {

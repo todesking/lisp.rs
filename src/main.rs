@@ -92,13 +92,19 @@ fn read_eval_print(s: &str, ctx: &mut Ctx) {
             if ctx.show_raw_input {
                 println!("[Input] {:?}", expr);
             }
-            let v = lisprs::eval(&expr, &mut ctx.global);
-            match v {
-                Ok(v) => {
-                    println!("     => {}", v);
-                }
-                Err(err) => {
-                    println!("Error=> {}", err);
+            match lisprs::eval::build_top_ast(&expr, &ctx.global) {
+                Err(err) => println!("Compile error: {}", err),
+                Ok(ast) => {
+                    println!("AST: {:?}", ast);
+                    let v = lisprs::eval::eval_top_ast(&ast, &mut ctx.global);
+                    match v {
+                        Ok(v) => {
+                            println!("     => {}", v);
+                        }
+                        Err(err) => {
+                            println!("Error=> {}", err);
+                        }
+                    }
                 }
             }
         }

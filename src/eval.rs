@@ -17,6 +17,7 @@ pub use local_env::LocalEnv;
 
 mod compile;
 
+pub use compile::build_top_ast;
 pub use compile::Ast;
 pub use compile::TopAst;
 
@@ -24,12 +25,12 @@ pub type EvalResult = Result<Value, EvalError>;
 
 pub fn eval(e: &Value, global: &mut GlobalEnv) -> EvalResult {
     let ast = compile::build_top_ast(e, global)?;
-    eval_top(&ast, global)
+    eval_top_ast(&ast, global)
 }
 
 type Args = Rc<RefCell<Vec<Value>>>;
 
-fn eval_top(top: &TopAst, global: &mut GlobalEnv) -> EvalResult {
+pub fn eval_top_ast(top: &TopAst, global: &mut GlobalEnv) -> EvalResult {
     let args = Rc::new(RefCell::new(Vec::new()));
     match top {
         TopAst::Define(name, value) => {
@@ -99,7 +100,7 @@ fn eval_local(
                 rest_name: rest_name.clone(),
                 bodies: bodies.clone(),
                 expr: expr.clone(),
-                env: local.extend(args.clone()),
+                env: local.extended(args.clone()),
             };
             Cont::ok_ret(Value::ref_value(lambda))
         }
@@ -149,6 +150,14 @@ fn eval_local(
             }
         },
         Ast::Error(err) => Err(err.clone()),
+        Ast::GetRec(depth, index) => Cont::ok_ret(local.get_rec(*depth, *index)),
+        Ast::LetRec(defs, body, expr) => {
+            let local = local.rec_extended(defs);
+            for b in body {
+                eval_local_loop(b, global, &local, args)?;
+            }
+            eval_local(expr, global, &local, args)
+        }
     }
 }
 
@@ -184,6 +193,17 @@ fn eval_apply(f: &Value, args: Vec<Value>, global: &mut GlobalEnv) -> Result<Con
                     eval_local_loop(b, global, env, &args)?;
                 }
                 eval_local(expr, global, env, &args)
+            }
+            RefValue::RecLambda { lambda_def, env } => {
+                let args = bind_args(
+                    lambda_def.param_names.len(),
+                    lambda_def.rest_name.is_some(),
+                    args,
+                )?;
+                for b in lambda_def.bodies.as_ref() {
+                    eval_local_loop(b, global, env, &args)?;
+                }
+                eval_local(&lambda_def.expr, global, env, &args)
             }
             RefValue::Fun { fun, .. } => fun.0(&args).map(Cont::Ret),
             RefValue::Cons(..) => Err(EvalError::CantApply(f.clone(), args.into_boxed_slice())),

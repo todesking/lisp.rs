@@ -1,6 +1,6 @@
 .PHONY: all check fix clippy test clean bench build help memtest print-type-sizes
 
-all: fix clippy test memtest
+all: fix clippy memtest
 
 fix: check
 	cargo fmt && cargo fix --allow-dirty --allow-staged
@@ -16,6 +16,7 @@ test: check
 
 memtest:
 	RUSTFLAGS="-Z sanitizer=leak" cargo +nightly run  --example memory_test
+	RUSTFLAGS="-Z sanitizer=leak" cargo +nightly test
 
 clean:
 	cargo clean

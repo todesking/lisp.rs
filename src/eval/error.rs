@@ -10,6 +10,7 @@ pub enum EvalError {
     Unsafe,
     User(Value),
     DefineInLocalContext,
+    ReadOnly(String),
 }
 
 impl EvalError {
@@ -30,6 +31,7 @@ impl EvalError {
             EvalError::Unsafe => ("Unsafe", Value::nil()),
             EvalError::User(value) => ("User", value.clone()),
             EvalError::DefineInLocalContext => ("DefineInLocalContext", Value::nil()),
+            EvalError::ReadOnly(name) => ("ReadOnly", Value::sym(name)),
         }
     }
 }
