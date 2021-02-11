@@ -41,13 +41,7 @@ fn main() -> std::io::Result<()> {
 }
 
 fn load_cli_env(global: &mut GlobalEnv) {
-    lisprs::eval_str_or_panic(
-        "(define fib (lambda (n)
-            (if (eq? n 0) 0
-                (if (eq? n 1) 1
-                    (+ (fib (- n 1)) (fib (- n 2)))))))",
-        global,
-    );
+    lisprs::eval_str_all_or_panic(include_str!("repl.lisp"), global);
 }
 
 fn do_command(line: &str, ctx: &mut Ctx) -> bool {

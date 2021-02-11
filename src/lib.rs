@@ -30,3 +30,10 @@ pub fn eval_str_or_panic(src: &str, global: &mut eval::GlobalEnv) -> value::Valu
     let expr = parse(src).expect("Parse failed");
     eval(&expr, global).expect("Eval failed")
 }
+
+pub fn eval_str_all_or_panic(src: &str, global: &mut eval::GlobalEnv) {
+    let exprs = parse_all(src).expect("Parse failed");
+    for e in exprs {
+        eval(&e, global).expect("Eval failed");
+    }
+}
