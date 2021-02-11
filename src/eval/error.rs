@@ -11,6 +11,7 @@ pub enum EvalError {
     User(Value),
     DefineInLocalContext,
     ReadOnly(String),
+    QuasiQuote,
 }
 
 impl EvalError {
@@ -32,6 +33,7 @@ impl EvalError {
             EvalError::User(value) => ("User", value.clone()),
             EvalError::DefineInLocalContext => ("DefineInLocalContext", Value::nil()),
             EvalError::ReadOnly(name) => ("ReadOnly", Value::sym(name)),
+            EvalError::QuasiQuote => ("QuasiQuote", Value::nil()),
         }
     }
 }
@@ -39,6 +41,7 @@ impl EvalError {
 impl std::fmt::Display for EvalError {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         let (err, data) = self.to_tuple();
+        fmt.write_str("EvalError::")?;
         fmt.write_str(err)?;
         fmt.write_str("[")?;
         fmt.write_fmt(format_args!("{}", data))?;

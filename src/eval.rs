@@ -19,6 +19,7 @@ mod compile;
 
 pub use compile::build_top_ast;
 pub use compile::Ast;
+use compile::QuasiQuote;
 pub use compile::TopAst;
 
 pub type EvalResult = Result<Value, EvalError>;
@@ -169,7 +170,35 @@ fn eval_local(
             }
             eval_local(expr, global, &local, args)
         }
+        Ast::QuasiQuote(qq) => eval_quasiquote(qq, global, local, args).map(Cont::Ret),
     }
+}
+
+fn eval_quasiquote(
+    qq: &QuasiQuote,
+    global: &mut GlobalEnv,
+    local: &Option<Rc<LocalEnv>>,
+    args: &Args,
+) -> EvalResult {
+    match qq {
+        QuasiQuote::Const(value) => Ok(value.clone()),
+        QuasiQuote::Expr(ast) => eval_local_loop(ast, global, local, args),
+        QuasiQuote::Cons(car, cdr) => {
+            let car = eval_quasiquote(car, global, local, args)?;
+            let cdr = eval_quasiquote(cdr, global, local, args)?;
+            Ok(Value::cons(car, cdr))
+        }
+        QuasiQuote::Append(l1, l2) => {
+            let l1 = eval_quasiquote(l1, global, local, args)?;
+            let l2 = eval_quasiquote(l2, global, local, args)?;
+            append_list(l1, l2).ok_or(EvalError::QuasiQuote)
+        }
+    }
+}
+
+fn append_list(l1: Value, l2: Value) -> Option<Value> {
+    let l1 = l1.to_vec()?;
+    Some(l1.into_iter().rev().fold(l2, |a, x| Value::cons(x, a)))
 }
 
 fn bind_args(param_count: usize, has_rest: bool, mut args: Vec<Value>) -> Result<Args, EvalError> {

@@ -55,6 +55,26 @@ pub enum Ast {
         body: Vec<Ast>,
         expr: Box<Ast>,
     },
+    QuasiQuote(QuasiQuote),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum QuasiQuote {
+    Const(Value),
+    Cons(Box<QuasiQuote>, Box<QuasiQuote>),
+    Expr(Box<Ast>),
+    Append(Box<QuasiQuote>, Box<QuasiQuote>),
+}
+impl QuasiQuote {
+    fn cons(car: QuasiQuote, cdr: QuasiQuote) -> QuasiQuote {
+        QuasiQuote::Cons(car.into(), cdr.into())
+    }
+    fn append(l1: QuasiQuote, l2: QuasiQuote) -> QuasiQuote {
+        QuasiQuote::Append(l1.into(), l2.into())
+    }
+    fn expr(ast: Ast) -> QuasiQuote {
+        QuasiQuote::Expr(ast.into())
+    }
 }
 
 #[derive(Clone)]
@@ -268,6 +288,16 @@ fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast,
                 rec_depth,
             })
         }
+        Value::Sym(name) if name.as_ref() == "quasiquote" => {
+            let value = cdr.to_list1().ok_or(EvalError::QuasiQuote)?;
+            let qq = build_quasiquote(&value, None, env)
+                .unwrap_or_else(|err| QuasiQuote::expr(Ast::Error(err)));
+            Ok(Ast::QuasiQuote(qq))
+        }
+        Value::Sym(name) if name.as_ref() == "unquote" => Ok(Ast::Error(EvalError::QuasiQuote)),
+        Value::Sym(name) if name.as_ref() == "unquote-splicing" => {
+            Ok(Ast::Error(EvalError::QuasiQuote))
+        }
         f => match cdr.to_vec() {
             None => illegal_argument_error(cdr.clone()),
             Some(args) => {
@@ -280,6 +310,58 @@ fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast,
                 Ok(Ast::Apply(Box::new(f), arg_values))
             }
         },
+    }
+}
+
+fn build_quasiquote(
+    car: &Value,
+    cdr: Option<&Value>,
+    env: &StaticEnv,
+) -> Result<QuasiQuote, EvalError> {
+    if let Some((caar, cdar)) = car.to_cons() {
+        match caar {
+            Value::Sym(name) if &*name == "quasiquote" => Err(EvalError::QuasiQuote),
+            Value::Sym(name) if &*name == "unquote" => {
+                let arg = cdar.to_list1().ok_or(EvalError::QuasiQuote)?;
+                let ast = build_ast(&arg, env)?;
+                if let Some(cdr) = cdr {
+                    let cdr = build_quasiquote(cdr, None, env)?;
+                    Ok(QuasiQuote::cons(QuasiQuote::expr(ast), cdr))
+                } else {
+                    Ok(QuasiQuote::expr(ast))
+                }
+            }
+            Value::Sym(name) if &*name == "unquote-splicing" => {
+                let arg = cdar.to_list1().ok_or(EvalError::QuasiQuote)?;
+                let arg = build_ast(&arg, env)?;
+                let arg = QuasiQuote::Expr(Box::new(arg));
+                let cdr = cdr.ok_or(EvalError::QuasiQuote)?;
+                let cdr = build_quasiquote(cdr, None, env)?;
+                Ok(QuasiQuote::append(arg, cdr))
+            }
+            caar => {
+                let car = build_quasiquote(&caar, Some(&cdar), env)?;
+                if let Some(cdr) = cdr {
+                    let cdr = build_quasiquote(cdr, None, env)?;
+                    Ok(QuasiQuote::cons(car, cdr))
+                } else {
+                    Ok(car)
+                }
+            }
+        }
+    } else {
+        match car {
+            Value::Sym(name) if &**name == "quasiquote" => Err(EvalError::QuasiQuote),
+            _ => {
+                let car = QuasiQuote::Const(car.clone());
+                if let Some(cdr) = cdr {
+                    let cdr = build_quasiquote(cdr, None, env)?;
+                    Ok(QuasiQuote::cons(car, cdr))
+                } else {
+                    Ok(car)
+                }
+            }
+        }
     }
 }
 
