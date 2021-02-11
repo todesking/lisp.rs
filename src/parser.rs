@@ -4,8 +4,8 @@ use std::rc::Rc;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ParseError {
-    Unexpected,
-    Redundant,
+    Unexpected(String),
+    Redundant(String),
 }
 
 impl std::fmt::Display for ParseError {
@@ -43,7 +43,7 @@ impl Parser {
             if s.is_empty() {
                 Ok(v)
             } else {
-                Err(ParseError::Redundant)
+                Err(ParseError::Redundant(s.to_owned()))
             }
         })
     }
@@ -91,7 +91,8 @@ fn skip_ws(s: &str) -> &str {
 }
 
 fn consume<'a>(s: &'a str, pat: &str) -> Result<&'a str, ParseError> {
-    s.strip_prefix(pat).ok_or(ParseError::Unexpected)
+    s.strip_prefix(pat)
+        .ok_or_else(|| ParseError::Unexpected(s.to_owned()))
 }
 
 fn try_consume<'a>(s: &'a str, pat: &str) -> (bool, &'a str) {
@@ -116,7 +117,7 @@ fn parse_num(s: &str) -> ParseResult {
     let (minus, s) = try_consume(s, "-");
     let (s1, s2) = many(s, |c| '0' <= c && c <= '9');
     if s1.is_empty() {
-        Err(ParseError::Unexpected)
+        Err(ParseError::Unexpected(s2.to_owned()))
     } else {
         let n: i32 = s1.parse().expect("should not reach here");
         let n = if minus { -n } else { n };
@@ -131,8 +132,8 @@ fn parse_symbol<'p, 's>(p: &'p mut Parser, s: &'s str) -> ParseResult<'s> {
         |c| matches!( c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '+' | '-' | '*' | '/' | '%' | '?' | '!' | '\''),
     );
     match s1 {
-        "" => Err(ParseError::Unexpected),
-        "'" => Err(ParseError::Unexpected),
+        "" => Err(ParseError::Unexpected(s2.to_owned())),
+        "'" => Err(ParseError::Unexpected(s2.to_owned())),
         name => Ok((p.new_sym(name), s2)),
     }
 }
@@ -182,7 +183,7 @@ mod test {
         assert_eq!(e, Ok(Value::Int(123)));
 
         let e: Result<Value, ParseError> = "123a".parse();
-        assert_eq!(e, Err(ParseError::Redundant));
+        assert_eq!(e, Err(ParseError::Redundant("a".to_owned())));
 
         let e = "-123".parse();
         assert_eq!(e, Ok(Value::int(-123)));
@@ -206,10 +207,10 @@ mod test {
     #[test]
     fn test_quote() {
         let e = "'".parse::<Value>();
-        assert_eq!(e, Err(ParseError::Unexpected));
+        assert_eq!(e, Err(ParseError::Unexpected("".to_owned())));
 
         let e = "' 1".parse::<Value>();
-        assert_eq!(e, Err(ParseError::Unexpected));
+        assert_eq!(e, Err(ParseError::Unexpected(" 1".to_owned())));
 
         let e = "'1".parse::<Value>();
         assert_eq!(
