@@ -2,14 +2,14 @@ use criterion::Criterion;
 use criterion::{criterion_group, criterion_main};
 
 use lisprs::eval;
-use lisprs::parse_all;
 use lisprs::eval::GlobalEnv;
 use lisprs::list;
+use lisprs::parse_all;
 use lisprs::value::Value;
 
 fn run_bench(c: &mut Criterion, name: &str, call: &Value, global: &mut GlobalEnv) {
     c.bench_function(name, |b| {
-        b.iter(|| lisprs::eval(&call, global))
+        b.iter(|| lisprs::eval(&call, global).expect("Error in bench"))
     });
 }
 
@@ -31,8 +31,8 @@ fn bench_fib(c: &mut Criterion) {
     );
 
     for n in &[15] {
-    let call = list![Value::sym("fib"), n];
-    let name = format!("fib({})", n);
+        let call = list![Value::sym("fib"), n];
+        let name = format!("fib({})", n);
         run_bench(c, &name, &call, &mut global);
     }
 }
@@ -50,6 +50,33 @@ fn bench_tak(c: &mut Criterion) {
     run_bench(c, &name, &call, &mut global);
 }
 
+fn bench_lambda_nocapture(c: &mut Criterion) {
+    let mut global = load_global();
+    let n = 1000;
+    let call = list![Value::sym("bench-lambda-nocapture"), n];
+    let name = call.to_string();
+    run_bench(c, &name, &call, &mut global);
+}
+fn bench_lambda_capture(c: &mut Criterion) {
+    let mut global = load_global();
+    let n = 1000;
+    let call = list![Value::sym("bench-lambda-capture"), n];
+    let name = call.to_string();
+    run_bench(c, &name, &call, &mut global);
+}
+fn bench_lambda_letrec(c: &mut Criterion) {
+    let mut global = load_global();
+    let n = 1000;
+    let call = list![Value::sym("bench-lambda-letrec"), n];
+    let name = call.to_string();
+    run_bench(c, &name, &call, &mut global);
+}
 
-criterion_group!(benches, bench_fib, bench_tak);
-criterion_main!(benches);
+criterion_group!(benches_function_call, bench_fib, bench_tak);
+criterion_group!(
+    benches_lambda,
+    bench_lambda_capture,
+    bench_lambda_nocapture,
+    bench_lambda_letrec
+);
+criterion_main!(benches_function_call, benches_lambda);
