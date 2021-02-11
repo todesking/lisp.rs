@@ -4,11 +4,18 @@ use crate::value::Value;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-#[derive(Debug, PartialEq, Eq, Default)]
-pub struct LocalEnv {
-    // value(depth, index) = values[depth - 1][index]
-    values: Vec<Rc<RefCell<Vec<Value>>>>,
-    rec_values: Vec<Rc<[RecValue]>>,
+#[derive(Debug, PartialEq, Eq)]
+pub enum LocalEnv {
+    Local {
+        depth: usize,
+        values: Rc<RefCell<Vec<Value>>>,
+        parent: Option<Rc<LocalEnv>>,
+    },
+    Rec {
+        rec_depth: usize,
+        rec_values: Vec<RecValue>,
+        parent: Option<Rc<LocalEnv>>,
+    },
 }
 
 #[derive(Debug)]
@@ -25,49 +32,134 @@ impl PartialEq for RecValue {
 impl Eq for RecValue {}
 
 impl LocalEnv {
-    pub fn new() -> LocalEnv {
-        Default::default()
+    // for testing :(
+    pub fn any() -> LocalEnv {
+        LocalEnv::Local {
+            values: Default::default(),
+            depth: 1,
+            parent: None,
+        }
     }
-    pub fn extended(&self, args: Rc<RefCell<Vec<Value>>>) -> LocalEnv {
-        let mut values = self.values.clone();
-        values.push(args);
-        let rec_values = self.rec_values.clone();
-        LocalEnv { values, rec_values }
-    }
-    pub fn get(&self, depth: usize, index: usize) -> Value {
-        self.values[depth - 1].as_ref().borrow()[index].clone()
-    }
-    pub fn set(&self, depth: usize, index: usize, value: Value) {
-        let mut v = self.values[depth - 1].as_ref().borrow_mut();
-        v[index] = value;
-    }
-    pub fn get_rec(&self, rec_depth: usize, index: usize) -> Value {
-        let rec_value = &self.rec_values[rec_depth - 1].as_ref()[index];
-        let env = rec_value
-            .env
-            .upgrade()
-            .expect("LambdaDef's env must alive here");
-        Value::ref_value(RefValue::RecLambda {
-            lambda_def: rec_value.lambda_def.clone(),
-            env,
+    pub fn extended(
+        parent: Option<Rc<LocalEnv>>,
+        depth: usize,
+        values: Rc<RefCell<Vec<Value>>>,
+    ) -> Rc<LocalEnv> {
+        Rc::new(LocalEnv::Local {
+            depth,
+            values,
+            parent,
         })
     }
-    pub fn rec_extended(&self, defs: &[LambdaDef]) -> Rc<LocalEnv> {
-        let values = self.values.clone();
-        let rec_values = self.rec_values.clone();
-        let env = Rc::new(LocalEnv { values, rec_values });
+    pub fn get(env: &Option<Rc<LocalEnv>>, depth: usize, index: usize) -> Value {
+        if let Some(env) = env {
+            let target_depth = depth;
+            match env.as_ref() {
+                LocalEnv::Local {
+                    values,
+                    depth,
+                    parent,
+                } => {
+                    if *depth == target_depth {
+                        values.borrow()[index].clone()
+                    } else {
+                        Self::get(parent, target_depth, index)
+                    }
+                }
+                LocalEnv::Rec { parent, .. } => Self::get(parent, depth, index),
+            }
+        } else {
+            panic!(format!(
+                "get: Local variable lookup failed: depth={}, index={}",
+                depth, index
+            ))
+        }
+    }
+    pub fn set(env: &Option<Rc<LocalEnv>>, depth: usize, index: usize, value: Value) {
+        if let Some(env) = env {
+            let target_depth = depth;
+            match env.as_ref() {
+                LocalEnv::Local {
+                    values,
+                    depth,
+                    parent,
+                } => {
+                    if *depth == target_depth {
+                        values.borrow_mut()[index] = value;
+                    } else {
+                        Self::set(parent, target_depth, index, value)
+                    }
+                }
+                LocalEnv::Rec { parent, .. } => Self::set(parent, depth, index, value),
+            }
+        } else {
+            panic!(format!(
+                "set: Local variable lookup failed: depth={}, index={}",
+                depth, index
+            ))
+        }
+    }
+    pub fn get_rec(env: &Option<Rc<LocalEnv>>, rec_depth: usize, index: usize) -> Value {
+        if let Some(env) = env {
+            let target_depth = rec_depth;
+            match env.as_ref() {
+                LocalEnv::Rec {
+                    rec_depth,
+                    rec_values,
+                    parent,
+                } => {
+                    if *rec_depth == target_depth {
+                        let rec_value = &rec_values[index];
+                        let env = rec_value
+                            .env
+                            .upgrade()
+                            .expect("LambdaDef's env must alive here");
+                        Value::ref_value(RefValue::RecLambda {
+                            lambda_def: rec_value.lambda_def.clone(),
+                            env,
+                        })
+                    } else {
+                        Self::get_rec(parent, target_depth, index)
+                    }
+                }
+                LocalEnv::Local { parent, .. } => Self::get_rec(parent, target_depth, index),
+            }
+        } else {
+            panic!(format!(
+                "get_rec: Local variable lookup failed: rec_depth={}, index={}",
+                rec_depth, index
+            ))
+        }
+    }
+    pub fn rec_extended(
+        parent: Option<Rc<LocalEnv>>,
+        rec_depth: usize,
+        defs: &[LambdaDef],
+    ) -> Rc<LocalEnv> {
+        let env = LocalEnv::Rec {
+            rec_depth,
+            rec_values: Vec::with_capacity(defs.len()),
+            parent,
+        };
+        let env = Rc::new(env);
         let self_ref = Rc::downgrade(&env);
-        let additional = defs
+        let rvs = defs
             .iter()
             .map(|def| RecValue {
                 lambda_def: Rc::new(def.clone()),
                 env: self_ref.clone(),
             })
             .collect::<Vec<_>>();
-        let additional = Rc::from(additional);
         unsafe {
-            let rec_values = &env.as_ref().rec_values as *const _ as *mut Vec<Rc<[RecValue]>>;
-            (*rec_values).push(additional);
+            match env.as_ref() {
+                LocalEnv::Rec { rec_values, .. } => {
+                    let rec_values = rec_values as *const _ as *mut Vec<RecValue>;
+                    for rv in rvs {
+                        (*rec_values).push(rv);
+                    }
+                }
+                LocalEnv::Local { .. } => unreachable!(),
+            }
         }
         env
     }

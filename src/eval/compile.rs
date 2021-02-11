@@ -23,6 +23,7 @@ pub enum Ast {
         rest_name: Option<Rc<str>>,
         bodies: Rc<[Ast]>,
         expr: Rc<Ast>,
+        depth: usize,
     },
     Apply(Box<Ast>, Vec<Ast>),
     SetLocal {
@@ -48,7 +49,12 @@ pub enum Ast {
     },
     Error(EvalError),
     GetRec(usize, usize),
-    LetRec(Vec<LambdaDef>, Vec<Ast>, Box<Ast>),
+    LetRec {
+        rec_depth: usize,
+        defs: Vec<LambdaDef>,
+        body: Vec<Ast>,
+        expr: Box<Ast>,
+    },
 }
 
 #[derive(Clone)]
@@ -215,11 +221,13 @@ fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast,
                     .map(|v| build_ast(v, &body_env))
                     .collect::<Result<Rc<[Ast]>, EvalError>>()?;
                 let expr = Rc::new(build_ast(expr, &body_env)?);
+                let depth = body_env.local_depth;
                 Ok(Ast::Lambda {
                     param_names,
                     rest_name,
                     bodies,
                     expr,
+                    depth,
                 })
             }
             _ => Err(EvalError::IllegalArgument(cdr.clone())),
@@ -252,7 +260,13 @@ fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast,
             let body = body.to_vec();
             let expr = Box::new(expr.clone());
             let defs = defs.into_iter().map(|d| d.1).collect();
-            Ok(Ast::LetRec(defs, body, expr))
+            let rec_depth = env.rec_depth;
+            Ok(Ast::LetRec {
+                defs,
+                body,
+                expr,
+                rec_depth,
+            })
         }
         f => match cdr.to_vec() {
             None => illegal_argument_error(cdr.clone()),

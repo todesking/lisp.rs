@@ -15,3 +15,14 @@
 
 (assert-eq (even? 9) false)
 (assert-eq (odd? 9) true)
+
+(define f
+  (lambda (x)
+   (letrec (((get-g) g)
+            ((g x) (+ x 1)))
+    (lambda (y)
+      (get-g)))))
+
+(assert-eq
+ (((f 1) 2) 3)
+ 4)

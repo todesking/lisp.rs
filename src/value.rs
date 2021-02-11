@@ -29,7 +29,7 @@ pub enum RefValue {
         rest_name: Option<Rc<str>>,
         bodies: Rc<[Ast]>,
         expr: Rc<Ast>,
-        env: LocalEnv,
+        env: Rc<LocalEnv>,
     },
     RecLambda {
         lambda_def: Rc<LambdaDef>,
@@ -485,7 +485,7 @@ mod test {
                 rest_name: Some(Rc::from("rest")),
                 bodies: Vec::<Ast>::new().into_iter().collect::<Rc<[Ast]>>(),
                 expr: Rc::new(Ast::Const(Value::nil())),
-                env: LocalEnv::default(),
+                env: Rc::new(LocalEnv::any()),
             })
             .to_string(),
             "#<lambda x . rest>"
