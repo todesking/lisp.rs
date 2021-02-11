@@ -101,6 +101,9 @@ fn try_consume<'a>(s: &'a str, pat: &str) -> (bool, &'a str) {
 
 fn parse_expr<'p, 's>(p: &'p mut Parser, s: &'s str) -> ParseResult<'s> {
     parse_quote(p, s)
+        .or_else(|_| parse_quasiquote(p, s))
+        .or_else(|_| parse_unquote_splicing(p, s))
+        .or_else(|_| parse_unquote(p, s))
         .or_else(|_| parse_num(s))
         .or_else(|_| parse_list(p, s))
         .or_else(|_| parse_symbol(p, s))
@@ -109,7 +112,28 @@ fn parse_expr<'p, 's>(p: &'p mut Parser, s: &'s str) -> ParseResult<'s> {
 fn parse_quote<'p, 's>(p: &'p mut Parser, s: &'s str) -> ParseResult<'s> {
     let s = consume(s, "'")?;
     let (e, s) = parse_expr(p, s)?;
-    let e = Value::cons(p.new_sym("quote"), Value::cons(e, Value::nil()));
+    let e = list![p.new_sym("quote"), e];
+    Ok((e, s))
+}
+
+fn parse_quasiquote<'p, 's>(p: &'p mut Parser, s: &'s str) -> ParseResult<'s> {
+    let s = consume(s, "`")?;
+    let (e, s) = parse_expr(p, s)?;
+    let e = list![p.new_sym("quasiquote"), e];
+    Ok((e, s))
+}
+
+fn parse_unquote_splicing<'p, 's>(p: &'p mut Parser, s: &'s str) -> ParseResult<'s> {
+    let s = consume(s, ",@")?;
+    let (e, s) = parse_expr(p, s)?;
+    let e = list![p.new_sym("unquote-splicing"), e];
+    Ok((e, s))
+}
+
+fn parse_unquote<'p, 's>(p: &'p mut Parser, s: &'s str) -> ParseResult<'s> {
+    let s = consume(s, ",")?;
+    let (e, s) = parse_expr(p, s)?;
+    let e = list![p.new_sym("unquote"), e];
     Ok((e, s))
 }
 
@@ -222,5 +246,30 @@ mod test {
         parse("(1 2 3)").should_ok(list![1, 2, 3]);
         parse("(1 2 . 3)").should_ok(list![1,2; 3]);
         parse("(   1 2 . 0   )").should_ok(list![1, 2; 0]);
+    }
+
+    #[test]
+    fn test_quasiquote() {
+        parse("`").should_error(ParseError::Unexpected("`".to_owned()));
+        parse("` 1").should_error(ParseError::Unexpected("` 1".to_owned()));
+        parse("`1").should_ok(list![Value::sym("quasiquote"), 1]);
+
+        parse(",").should_error(ParseError::Unexpected(",".to_owned()));
+        parse(", 1").should_error(ParseError::Unexpected(", 1".to_owned()));
+        parse(",1").should_ok(list![Value::sym("unquote"), 1]);
+
+        parse(",@").should_error(ParseError::Unexpected(",@".to_owned()));
+        parse(",@ 1").should_error(ParseError::Unexpected(",@ 1".to_owned()));
+        parse(",@1").should_ok(list![Value::sym("unquote-splicing"), 1]);
+
+        parse("`(1 2 ,x ,@xs)").should_ok(list![
+            Value::sym("quasiquote"),
+            list![
+                1,
+                2,
+                list![Value::sym("unquote"), Value::sym("x")],
+                list![Value::sym("unquote-splicing"), Value::sym("xs")]
+            ]
+        ]);
     }
 }
