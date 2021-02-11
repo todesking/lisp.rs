@@ -1,6 +1,5 @@
 use crate::eval::EvalError;
 use crate::eval::GlobalEnv;
-use crate::eval_str_or_panic;
 use crate::value::Extract;
 use crate::value::Value;
 pub fn load(global: &mut GlobalEnv) {
@@ -52,7 +51,6 @@ pub fn load(global: &mut GlobalEnv) {
             }
         }),
     );
-    eval_str_or_panic("(define list (lambda x x))", global);
     global.set_fun1("car", |x1| {
         if let Some((car, _)) = x1.to_cons() {
             Ok(car)
@@ -72,29 +70,9 @@ pub fn load(global: &mut GlobalEnv) {
     global.set_fun2("unsafe-set-car!", |x, v| x.set_car(v.clone(), false));
     global.set_fun2("unsafe-set-cdr!", |x, v| x.set_cdr(v.clone(), false));
 
-    eval_str_or_panic(
-        "
-            (define assert-eq
-                (lambda (expected actual)
-                    (if (eq? expected actual) () (error 'assert-eq expected actual))))",
-        global,
-    );
-    eval_str_or_panic(
-        "(define assert-error
-                (lambda (f err)
-                    (assert-eq
-                        (catch-error
-                            (lambda (err x) (cons err x))
-                            (f))
-                        err)))",
-        global,
-    );
-    eval_str_or_panic("(define nil? (lambda (x) (eq? x ())))", global);
-    eval_str_or_panic(
-        "(define map (lambda (f l)
-            (if (nil? l)
-              l
-              (cons (f (car l)) (map f (cdr l))))))",
-        global,
-    );
+    let predef_src = include_str!("predef.lisp");
+    let predef_exprs = crate::parse_all(predef_src).expect("Parse error at predef.lisp");
+    for predef_expr in predef_exprs {
+        crate::eval(&predef_expr, global).expect("Eval error at predef.lisp");
+    }
 }
