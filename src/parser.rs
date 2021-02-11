@@ -94,6 +94,10 @@ fn consume<'a>(s: &'a str, pat: &str) -> Result<&'a str, ParseError> {
     s.strip_prefix(pat).ok_or(ParseError::Unexpected)
 }
 
+fn try_consume<'a>(s: &'a str, pat: &str) -> (bool, &'a str) {
+    s.strip_prefix(pat).map(|s| (true, s)).unwrap_or((false, s))
+}
+
 fn parse_expr<'p, 's>(p: &'p mut Parser, s: &'s str) -> ParseResult<'s> {
     parse_quote(p, s)
         .or_else(|_| parse_num(s))
@@ -109,11 +113,15 @@ fn parse_quote<'p, 's>(p: &'p mut Parser, s: &'s str) -> ParseResult<'s> {
 }
 
 fn parse_num(s: &str) -> ParseResult {
+    let (minus, s) = try_consume(s, "-");
     let (s1, s2) = many(s, |c| '0' <= c && c <= '9');
     if s1.is_empty() {
         Err(ParseError::Unexpected)
     } else {
-        Ok((Value::Int(s1.parse().expect("should not reach here")), s2))
+        let n: i32 = s1.parse().expect("should not reach here");
+        let n = if minus { -n } else { n };
+        let n = Value::Int(n);
+        Ok((n, s2))
     }
 }
 
@@ -175,6 +183,9 @@ mod test {
 
         let e: Result<Value, ParseError> = "123a".parse();
         assert_eq!(e, Err(ParseError::Redundant));
+
+        let e = "-123".parse();
+        assert_eq!(e, Ok(Value::int(-123)));
     }
 
     #[test]
