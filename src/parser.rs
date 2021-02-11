@@ -129,7 +129,7 @@ fn parse_num(s: &str) -> ParseResult {
 fn parse_symbol<'p, 's>(p: &'p mut Parser, s: &'s str) -> ParseResult<'s> {
     let (s1, s2) = many(
         s,
-        |c| matches!( c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '+' | '-' | '*' | '/' | '%' | '?' | '!' | '\''),
+        |c| matches!( c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '+' | '-' | '*' | '/' | '%' | '?' | '!' | '\'' | '<' | '>' | '='),
     );
     match s1 {
         "" => Err(ParseError::Unexpected(s2.to_owned())),
@@ -200,8 +200,8 @@ mod test {
         let e = "f0".parse();
         assert_eq!(e, Ok(Value::sym("f0")));
 
-        let e = "+-*/%".parse();
-        assert_eq!(e, Ok(Value::sym("+-*/%")));
+        let e = "+-*/%<>=".parse();
+        assert_eq!(e, Ok(Value::sym("+-*/%<>=")));
     }
 
     #[test]
