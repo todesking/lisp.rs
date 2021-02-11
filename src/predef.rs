@@ -34,6 +34,10 @@ pub fn load(global: &mut GlobalEnv) {
     global.set("/", Value::fun2("/", |l: i32, r: i32| l / r));
     global.set("%", Value::fun2("%", |l: i32, r: i32| l % r));
     global.set_fun2("eq?", |lhs, rhs| Ok(Value::bool(lhs == rhs)));
+    global.set("<", Value::fun2("<", |l: i32, r: i32| l < r));
+    global.set("<=", Value::fun2("<=", |l: i32, r: i32| l <= r));
+    global.set(">", Value::fun2(">", |l: i32, r: i32| l > r));
+    global.set(">=", Value::fun2(">=", |l: i32, r: i32| l >= r));
 
     global.set(
         "cons",
