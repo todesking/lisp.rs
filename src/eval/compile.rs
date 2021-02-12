@@ -56,6 +56,35 @@ pub enum Ast {
         expr: Box<Ast>,
     },
     QuasiQuote(QuasiQuote),
+    IfMatch(usize, Box<Ast>, MatchPattern, Box<Ast>, Box<Ast>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MatchPattern {
+    Const(Value),
+    Capture(usize),
+    Cons(Box<MatchPattern>, Box<MatchPattern>),
+    SameAs(usize),
+}
+impl MatchPattern {
+    pub fn match_and_bind(&self, value: &Value, out: &mut Vec<Value>) -> bool {
+        match self {
+            MatchPattern::Const(v) => v == value,
+            MatchPattern::Capture(index) => {
+                assert!(out.len() == *index);
+                out.push(value.clone());
+                true
+            }
+            MatchPattern::SameAs(index) => &out[*index] == value,
+            MatchPattern::Cons(pcar, pcdr) => {
+                if let Some((vcar, vcdr)) = value.to_cons() {
+                    pcar.match_and_bind(&vcar, out) && pcdr.match_and_bind(&vcdr, out)
+                } else {
+                    false
+                }
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -298,6 +327,39 @@ fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast,
         Value::Sym(name) if name.as_ref() == "unquote-splicing" => {
             Ok(Ast::Error(EvalError::QuasiQuote))
         }
+        Value::Sym(name) if &**name == "if-match" => {
+            let (expr, th, el) = cdr
+                .to_list3()
+                .ok_or_else(|| EvalError::IllegalArgument(cdr.clone()))?;
+            let (pat, th) = th
+                .to_list2()
+                .ok_or_else(|| EvalError::IllegalArgument(th.clone()))?;
+            let expr = build_ast(&expr, env)?;
+            let mut pat_env = Vec::new();
+            let pat = build_pattern(&pat, &mut pat_env)?;
+            let pat_env = pat_env
+                .iter()
+                .map(|n| Rc::from(n.clone()))
+                .collect::<Vec<_>>();
+            let capture_size = pat_env.len();
+            let th_env = env.extended(&pat_env, &None);
+            let th = build_ast(&th, &th_env)?;
+            let th = Ast::Lambda {
+                param_names: pat_env,
+                rest_name: None,
+                bodies: Rc::from(vec![]),
+                expr: Rc::new(th),
+                depth: env.local_depth,
+            };
+            let el = build_ast(&el, env)?;
+            Ok(Ast::IfMatch(
+                capture_size,
+                Box::new(expr),
+                pat,
+                Box::new(th),
+                Box::new(el),
+            ))
+        }
         f => match cdr.to_vec() {
             None => illegal_argument_error(cdr.clone()),
             Some(args) => {
@@ -309,6 +371,42 @@ fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast,
                 }
                 Ok(Ast::Apply(Box::new(f), arg_values))
             }
+        },
+    }
+}
+
+fn build_pattern(pat: &Value, env: &mut Vec<String>) -> Result<MatchPattern, EvalError> {
+    match pat {
+        Value::Sym(name) => {
+            let name = name.as_ref();
+            if let Some(index) = env.iter().position(|n| n == name) {
+                Ok(MatchPattern::SameAs(index))
+            } else {
+                let index = env.len();
+                env.push(name.to_owned());
+                Ok(MatchPattern::Capture(index))
+            }
+        }
+        Value::Int(..) | Value::Bool(..) | Value::Nil => Ok(MatchPattern::Const(pat.clone())),
+        Value::Ref(r) => match &**r {
+            RefValue::Cons(car, cdr) => {
+                let car = car.borrow();
+                let cdr = cdr.borrow();
+                match &*car {
+                    Value::Sym(name) if &**name == "quote" => {
+                        let value = cdr
+                            .to_list1()
+                            .ok_or_else(|| EvalError::IllegalArgument(pat.clone()))?;
+                        Ok(MatchPattern::Const(value))
+                    }
+                    _ => {
+                        let car = build_pattern(&car, env)?;
+                        let cdr = build_pattern(&cdr, env)?;
+                        Ok(MatchPattern::Cons(car.into(), cdr.into()))
+                    }
+                }
+            }
+            _ => Err(EvalError::IllegalArgument(pat.clone())),
         },
     }
 }

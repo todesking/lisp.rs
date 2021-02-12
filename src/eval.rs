@@ -171,6 +171,16 @@ fn eval_local(
             eval_local(expr, global, &local, args)
         }
         Ast::QuasiQuote(qq) => eval_quasiquote(qq, global, local, args).map(Cont::Ret),
+        Ast::IfMatch(varsize, expr, pat, th, el) => {
+            let expr = eval_local_loop(expr, global, local, args)?;
+            let mut vars = Vec::with_capacity(*varsize);
+            if pat.match_and_bind(&expr, &mut vars) {
+                let th = eval_local_loop(th, global, local, args)?;
+                Cont::ok_cont(th, vars)
+            } else {
+                eval_local(&el, global, local, args)
+            }
+        }
     }
 }
 

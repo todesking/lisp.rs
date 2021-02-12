@@ -222,6 +222,11 @@ impl Value {
         let (x2, x3) = xs.to_list2()?;
         Some((x1, x2, x3))
     }
+    pub fn to_list4(&self) -> Option<(Value, Value, Value, Value)> {
+        let (x1, xs) = self.to_cons()?;
+        let (x2, x3, x4) = xs.to_list3()?;
+        Some((x1, x2, x3, x4))
+    }
     pub fn to_cons(&self) -> Option<(Value, Value)> {
         match self {
             Value::Ref(r) => match r.as_ref() {
