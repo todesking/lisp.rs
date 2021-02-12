@@ -35,6 +35,7 @@ pub fn eval_top_ast(top: &TopAst, global: &mut GlobalEnv) -> EvalResult {
     let args = Rc::new(RefCell::new(Vec::new()));
     match top {
         TopAst::Define(name, value) => {
+            global.set(name, Value::nil());
             let value = eval_local_loop(value, global, &None, &args)?;
             global.set(name, value);
             Ok(Value::nil())
@@ -346,8 +347,8 @@ mod test {
 
         eval_str("(if 1 (define x 1) ())", &mut env).should_error(EvalError::DefineInLocalContext);
 
-        eval_str("(define loop loop)", &mut env)
-            .should_error(EvalError::VariableNotFound("loop".to_owned()));
+        eval_str("(define loop loop)", &mut env).should_nil();
+        eval_str("loop", &mut env).should_nil();
     }
 
     #[test]

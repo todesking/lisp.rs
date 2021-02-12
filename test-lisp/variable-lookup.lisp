@@ -34,3 +34,8 @@
 (assert-eq (get-x) 2)
 (set-x 3)
 (assert-eq (get-x) 3)
+
+(define undefined-var undefined-var)
+(assert-eq undefined-var ())
+(define undefined-var-2 ((lambda() undefined-var-2)))
+(assert-eq undefined-var ())
