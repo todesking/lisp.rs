@@ -54,7 +54,7 @@ impl LocalEnv {
     pub fn get(env: &Option<Rc<LocalEnv>>, depth: usize, index: usize) -> Value {
         if let Some(env) = env {
             let target_depth = depth;
-            match env.as_ref() {
+            match &**env {
                 LocalEnv::Local {
                     values,
                     depth,
@@ -78,7 +78,7 @@ impl LocalEnv {
     pub fn set(env: &Option<Rc<LocalEnv>>, depth: usize, index: usize, value: Value) {
         if let Some(env) = env {
             let target_depth = depth;
-            match env.as_ref() {
+            match &**env {
                 LocalEnv::Local {
                     values,
                     depth,
@@ -102,7 +102,7 @@ impl LocalEnv {
     pub fn get_rec(env: &Option<Rc<LocalEnv>>, rec_depth: usize, index: usize) -> Value {
         if let Some(env) = env {
             let target_depth = rec_depth;
-            match env.as_ref() {
+            match &**env {
                 LocalEnv::Rec {
                     rec_depth,
                     rec_values,
@@ -151,7 +151,7 @@ impl LocalEnv {
             })
             .collect::<Vec<_>>();
         unsafe {
-            match env.as_ref() {
+            match &*env {
                 LocalEnv::Rec { rec_values, .. } => {
                     let rec_values = rec_values as *const _ as *mut Vec<RecValue>;
                     for rv in rvs {

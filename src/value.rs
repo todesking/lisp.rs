@@ -229,7 +229,7 @@ impl Value {
     }
     pub fn to_cons(&self) -> Option<(Value, Value)> {
         match self {
-            Value::Ref(r) => match r.as_ref() {
+            Value::Ref(r) => match &**r {
                 RefValue::Cons(car, cdr) => Some((car.borrow().clone(), cdr.borrow().clone())),
                 _ => None,
             },
@@ -286,7 +286,7 @@ impl Value {
             return Err(EvalError::Unsafe);
         }
         match self {
-            Value::Ref(r) => match r.as_ref() {
+            Value::Ref(r) => match &**r {
                 RefValue::Cons(target, _) => {
                     *target.borrow_mut() = v;
                     Ok(Value::nil())
@@ -301,7 +301,7 @@ impl Value {
             return Err(EvalError::Unsafe);
         }
         match self {
-            Value::Ref(r) => match r.as_ref() {
+            Value::Ref(r) => match &**r {
                 RefValue::Cons(_, target) => {
                     *target.borrow_mut() = v;
                     Ok(Value::nil())
@@ -342,7 +342,7 @@ impl std::fmt::Display for Value {
             Value::Int(v) => fmt.write_fmt(format_args!("{}", v)),
             Value::Bool(true) => fmt.write_str("#t"),
             Value::Bool(false) => fmt.write_str("#f"),
-            Value::Sym(v) => fmt.write_str(v.as_ref()),
+            Value::Sym(v) => fmt.write_str(v),
             Value::Nil => fmt.write_str("()"),
             Value::Ref(r) => fmt.write_fmt(format_args!("{}", r)),
         }
@@ -355,7 +355,7 @@ fn fmt_cons(
     fmt: &mut std::fmt::Formatter<'_>,
 ) -> Result<(), std::fmt::Error> {
     if let Some(name) = car.as_sym() {
-        let prefix = match name.as_ref() {
+        let prefix = match &**name {
             "quote" => Some("'"),
             "quasiquote" => Some("`"),
             "unquote" => Some(","),

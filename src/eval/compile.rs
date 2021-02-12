@@ -196,7 +196,7 @@ fn illegal_argument_error<T>(value: Value) -> Result<T, EvalError> {
 
 pub fn build_top_ast(expr: &Value, global: &GlobalEnv) -> Result<TopAst, EvalError> {
     if let Some((car, cdr)) = expr.to_cons() {
-        if let Some("define") = car.as_sym().map(|r| r.as_ref()) {
+        if let Some("define") = car.as_sym().map(|r| &**r) {
             if let Some((name, value)) = cdr.to_list2() {
                 match name {
                     Value::Sym(name) => {
@@ -228,7 +228,7 @@ fn build_ast(expr: &Value, env: &StaticEnv) -> Result<Ast, EvalError> {
             Some(VarRef::Argument(index)) => Ok(Ast::GetArgument(index)),
             None => Ok(Ast::Error(EvalError::VariableNotFound(name.to_string()))),
         },
-        Value::Ref(r) => match r.as_ref() {
+        Value::Ref(r) => match &**r {
             RefValue::Cons(car, cdr) => build_ast_from_cons(&car.borrow(), &cdr.borrow(), env),
             RefValue::RecLambda { .. } | RefValue::Lambda { .. } | RefValue::Fun { .. } => {
                 Ok(Ast::Const(expr.clone()))
@@ -239,15 +239,15 @@ fn build_ast(expr: &Value, env: &StaticEnv) -> Result<Ast, EvalError> {
 
 fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast, EvalError> {
     match car {
-        Value::Sym(name) if name.as_ref() == "quote" => {
+        Value::Sym(name) if &**name == "quote" => {
             if let Some(x) = cdr.to_list1() {
                 Ok(Ast::Const(x))
             } else {
                 illegal_argument_error(cdr.clone())
             }
         }
-        Value::Sym(name) if name.as_ref() == "define" => Err(EvalError::DefineInLocalContext),
-        Value::Sym(name) if name.as_ref() == "if" => {
+        Value::Sym(name) if &**name == "define" => Err(EvalError::DefineInLocalContext),
+        Value::Sym(name) if &**name == "if" => {
             if let Some((cond, th, el)) = cdr.to_list3() {
                 let cond = build_ast(&cond, env)?;
                 let th = build_ast(&th, env)?;
@@ -257,7 +257,7 @@ fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast,
                 illegal_argument_error(cdr.clone())
             }
         }
-        Value::Sym(name) if name.as_ref() == "lambda" => match cdr.to_vec().as_deref() {
+        Value::Sym(name) if &**name == "lambda" => match cdr.to_vec().as_deref() {
             Some([params, bodies @ .., expr]) => {
                 let (param_names, rest_name) = params.collect_improper(|v| match v {
                     Value::Sym(name) => Ok(name.clone()),
@@ -280,12 +280,10 @@ fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast,
             }
             _ => Err(EvalError::IllegalArgument(cdr.clone())),
         },
-        Value::Sym(name) if name.as_ref() == "set-local!" => build_ast_set_local(cdr, true, env),
-        Value::Sym(name) if name.as_ref() == "unsafe-set-local!" => {
-            build_ast_set_local(cdr, false, env)
-        }
-        Value::Sym(name) if name.as_ref() == "set-global!" => build_ast_set_global(cdr, env),
-        Value::Sym(name) if name.as_ref() == "catch-error" => {
+        Value::Sym(name) if &**name == "set-local!" => build_ast_set_local(cdr, true, env),
+        Value::Sym(name) if &**name == "unsafe-set-local!" => build_ast_set_local(cdr, false, env),
+        Value::Sym(name) if &**name == "set-global!" => build_ast_set_global(cdr, env),
+        Value::Sym(name) if &**name == "catch-error" => {
             if let Some((handler, expr)) = cdr.to_list2() {
                 let handler = build_ast(&handler, env).map(Box::new)?;
                 let expr = build_ast(&expr, env).map(Box::new)?;
@@ -294,7 +292,7 @@ fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast,
                 illegal_argument_error(cdr.clone())
             }
         }
-        Value::Sym(name) if name.as_ref() == "letrec" => {
+        Value::Sym(name) if &**name == "letrec" => {
             let err = || EvalError::IllegalArgument(cdr.clone());
             let (defs, body) = cdr.to_cons().ok_or_else(err)?;
             let defs = defs.to_vec().ok_or_else(err)?;
@@ -316,16 +314,14 @@ fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast,
                 rec_depth,
             })
         }
-        Value::Sym(name) if name.as_ref() == "quasiquote" => {
+        Value::Sym(name) if &**name == "quasiquote" => {
             let value = cdr.to_list1().ok_or(EvalError::QuasiQuote)?;
             let qq = build_quasiquote(&value, None, env)
                 .unwrap_or_else(|err| QuasiQuote::expr(Ast::Error(err)));
             Ok(Ast::QuasiQuote(qq))
         }
-        Value::Sym(name) if name.as_ref() == "unquote" => Ok(Ast::Error(EvalError::QuasiQuote)),
-        Value::Sym(name) if name.as_ref() == "unquote-splicing" => {
-            Ok(Ast::Error(EvalError::QuasiQuote))
-        }
+        Value::Sym(name) if &**name == "unquote" => Ok(Ast::Error(EvalError::QuasiQuote)),
+        Value::Sym(name) if &**name == "unquote-splicing" => Ok(Ast::Error(EvalError::QuasiQuote)),
         Value::Sym(name) if &**name == "if-match" => {
             let (expr, th, el) = cdr
                 .to_list3()
@@ -377,7 +373,7 @@ fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast,
 fn build_pattern(pat: &Value, env: &mut Vec<String>) -> Result<MatchPattern, EvalError> {
     match pat {
         Value::Sym(name) => {
-            let name = name.as_ref();
+            let name = &**name;
             if name == "_" {
                 Ok(MatchPattern::Any)
             } else if let Some(index) = env.iter().position(|n| n == name) {
@@ -474,7 +470,7 @@ fn extract_lambda_defs<'a, 'b, E: Fn() -> EvalError + Copy>(
         .into_iter()
         .map(|raw| extract_raw_lambda_def(raw).ok_or_else(err))
         .collect::<Result<Vec<_>, _>>()?;
-    let env = env.rec_extended(defs.iter().map(|(name, ..)| name.as_ref()));
+    let env = env.rec_extended(defs.iter().map(|(name, ..)| &**name));
     let defs = defs
         .into_iter()
         .map(|(name, param_names, rest_name, bodies, expr)| {

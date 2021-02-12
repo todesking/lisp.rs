@@ -86,7 +86,7 @@ fn eval_local(
             let value = LocalEnv::get(local, *depth, *index);
             Cont::ok_ret(value)
         }
-        Ast::GetArgument(index) => Cont::ok_ret(args.as_ref().borrow()[*index].clone()),
+        Ast::GetArgument(index) => Cont::ok_ret(args.borrow()[*index].clone()),
         Ast::If(cond, th, el) => {
             let cond = eval_local_loop(cond, global, local, args)?;
             if let Some(b) = bool::extract(&cond) {
@@ -137,7 +137,7 @@ fn eval_local(
             Cont::ok_ret(Value::nil())
         }
         Ast::SetArg { index, value, .. } => {
-            args.as_ref().borrow_mut()[*index] = eval_local_loop(value, global, local, args)?;
+            args.borrow_mut()[*index] = eval_local_loop(value, global, local, args)?;
             Cont::ok_ret(Value::nil())
         }
         Ast::EnsureSafe(value) => {
@@ -231,7 +231,7 @@ fn bind_args(param_count: usize, has_rest: bool, mut args: Vec<Value>) -> Result
 
 fn eval_apply(f: &Value, args: Vec<Value>, global: &mut GlobalEnv) -> Result<Cont, EvalError> {
     match f {
-        Value::Ref(r) => match r.as_ref() {
+        Value::Ref(r) => match &**r {
             RefValue::Lambda {
                 param_names,
                 rest_name,
@@ -242,7 +242,7 @@ fn eval_apply(f: &Value, args: Vec<Value>, global: &mut GlobalEnv) -> Result<Con
                 // TODO: Make eval_*(env: &Option<Rc<LocalEnv>>) to env: Option<&Rc<LocalEnv>>
                 let env = Some(env.clone());
                 let args = bind_args(param_names.len(), rest_name.is_some(), args)?;
-                for b in bodies.as_ref() {
+                for b in &**bodies {
                     eval_local_loop(b, global, &env, &args)?;
                 }
                 eval_local(expr, global, &env, &args)
@@ -254,7 +254,7 @@ fn eval_apply(f: &Value, args: Vec<Value>, global: &mut GlobalEnv) -> Result<Con
                     args,
                 )?;
                 let env = Some(env.clone());
-                for b in lambda_def.bodies.as_ref() {
+                for b in &*lambda_def.bodies {
                     eval_local_loop(b, global, &env, &args)?;
                 }
                 eval_local(&lambda_def.expr, global, &env, &args)
