@@ -335,7 +335,8 @@ impl std::fmt::Display for Value {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
             Value::Int(v) => fmt.write_fmt(format_args!("{}", v)),
-            Value::Bool(v) => fmt.write_fmt(format_args!("{}", v)),
+            Value::Bool(true) => fmt.write_str("#t"),
+            Value::Bool(false) => fmt.write_str("#f"),
             Value::Sym(v) => fmt.write_str(v.as_ref()),
             Value::Nil => fmt.write_str("()"),
             Value::Ref(r) => fmt.write_fmt(format_args!("{}", r)),
@@ -491,7 +492,8 @@ mod test {
     #[test]
     fn test_display() {
         assert_eq!(Value::int(42).to_string(), "42");
-        assert_eq!(Value::bool(true).to_string(), "true");
+        assert_eq!(Value::bool(true).to_string(), "#t");
+        assert_eq!(Value::bool(false).to_string(), "#f");
         assert_eq!(Value::sym("foo").to_string(), "foo");
         assert_eq!(Value::nil().to_string(), "()");
         assert_eq!(list![1, 2, 3].to_string(), "(1 2 3)");

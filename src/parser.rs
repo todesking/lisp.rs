@@ -153,11 +153,14 @@ fn parse_num(s: &str) -> ParseResult {
 fn parse_symbol<'p, 's>(p: &'p mut Parser, s: &'s str) -> ParseResult<'s> {
     let (s1, s2) = many(
         s,
-        |c| matches!( c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '+' | '-' | '*' | '/' | '%' | '?' | '!' | '\'' | '<' | '>' | '='),
+        |c| matches!( c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '+' | '-' | '*' | '/' | '%' | '?' | '!' | '\'' | '<' | '>' | '=' | '#'),
     );
     match s1 {
         "" => Err(ParseError::Unexpected(s2.to_owned())),
         "'" => Err(ParseError::Unexpected(s2.to_owned())),
+        "#t" => Ok((Value::Bool(true), s2)),
+        "#f" => Ok((Value::Bool(false), s2)),
+        name if s1.starts_with('#') => Err(ParseError::Unexpected(name.to_owned())),
         name => Ok((p.new_sym(name), s2)),
     }
 }
@@ -223,7 +226,14 @@ mod test {
         parse("a").should_ok(Value::sym("a"));
         parse("LONG-symbol'name?!?!").should_ok(Value::sym("LONG-symbol'name?!?!"));
         parse("f0").should_ok(Value::sym("f0"));
-        parse("+-*/%<>=").should_ok(Value::sym("+-*/%<>="));
+        parse("+-*/%<>=#").should_ok(Value::sym("+-*/%<>=#"));
+        parse("#unknown-symbol").should_error(ParseError::Unexpected("#unknown-symbol".to_owned()));
+    }
+
+    #[test]
+    fn test_bool() {
+        parse("#t").should_ok(Value::Bool(true));
+        parse("#f").should_ok(Value::Bool(false));
     }
 
     #[test]
