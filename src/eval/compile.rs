@@ -65,10 +65,12 @@ pub enum MatchPattern {
     Capture(usize),
     Cons(Box<MatchPattern>, Box<MatchPattern>),
     SameAs(usize),
+    Any,
 }
 impl MatchPattern {
     pub fn match_and_bind(&self, value: &Value, out: &mut Vec<Value>) -> bool {
         match self {
+            MatchPattern::Any => true,
             MatchPattern::Const(v) => v == value,
             MatchPattern::Capture(index) => {
                 assert!(out.len() == *index);
@@ -379,7 +381,9 @@ fn build_pattern(pat: &Value, env: &mut Vec<String>) -> Result<MatchPattern, Eva
     match pat {
         Value::Sym(name) => {
             let name = name.as_ref();
-            if let Some(index) = env.iter().position(|n| n == name) {
+            if name == "_" {
+                Ok(MatchPattern::Any)
+            } else if let Some(index) = env.iter().position(|n| n == name) {
                 Ok(MatchPattern::SameAs(index))
             } else {
                 let index = env.len();

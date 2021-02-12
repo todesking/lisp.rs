@@ -34,9 +34,30 @@
   (if-match '(1 2 3)
    ((a . b) b) #f)
   '(2 3))
+(assert-eq
+  (if-match 123
+   ((a . b) b) #f)
+  #f)
 
 ; quote
 (assert-eq
  (if-match '(x y z)
   (('x ? 'z) ?) #f)
  'y)
+(assert-eq
+ (if-match '(x y x)
+  (('x ? 'z) ?) #f)
+ #f)
+
+; any
+(assert-eq
+ (if-match 123 (_ #t) #f)
+  #t)
+(assert-eq
+ (if-match '(1 2 3)
+  ((a _ _) a) #f)
+ 1)
+(assert-eq
+ (if-match '(1 2)
+  ((a _ _) a) #f)
+ #f)
