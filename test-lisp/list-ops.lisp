@@ -35,3 +35,7 @@
   (map (lambda (x) (+ x 1))
        '(10 20 30 40))
   '(11 21 31 41))
+
+(define x '(1 2 3 4 5))
+(set-car! (cdr x) 22)
+(assert-eq x '(1 22 3 4 5))
