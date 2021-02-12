@@ -8,6 +8,7 @@ use lisprs::parser::Parser;
 
 struct Ctx {
     show_raw_input: bool,
+    show_ast: bool,
     global: GlobalEnv,
     parser: Parser,
 }
@@ -15,6 +16,7 @@ struct Ctx {
 fn main() -> std::io::Result<()> {
     let mut ctx = Ctx {
         show_raw_input: false,
+        show_ast: false,
         global: lisprs::predef(),
         parser: Parser::new(),
     };
@@ -48,9 +50,14 @@ fn do_command(line: &str, ctx: &mut Ctx) -> bool {
     match line.trim() {
         ":q" => true,
         "" => false,
-        ":show_raw_input" => {
+        ":show-raw-input" => {
             ctx.show_raw_input = !ctx.show_raw_input;
-            println!("show_raw_input = {}", ctx.show_raw_input);
+            println!("set show-raw-input = {}", ctx.show_raw_input);
+            false
+        }
+        ":show-ast" => {
+            ctx.show_ast = !ctx.show_ast;
+            println!("set show-ast = {}", ctx.show_ast);
             false
         }
         ":ls" => {
@@ -63,7 +70,7 @@ fn do_command(line: &str, ctx: &mut Ctx) -> bool {
         }
         ":help" => {
             println!("Commands:");
-            for cmd in &[":q", ":show_raw_input", ":ls", ":help"] {
+            for cmd in &[":q", ":show-raw-input", ":show-ast", ":ls", ":help"] {
                 println!("- {}", cmd);
             }
             false
@@ -89,7 +96,9 @@ fn read_eval_print(s: &str, ctx: &mut Ctx) {
             match lisprs::eval::build_top_ast(&expr, &ctx.global) {
                 Err(err) => println!("Compile error: {}", err),
                 Ok(ast) => {
-                    println!("AST: {:?}", ast);
+                    if ctx.show_ast {
+                        println!("AST: {:?}", ast);
+                    }
                     let v = lisprs::eval::eval_top_ast(&ast, &mut ctx.global);
                     match v {
                         Ok(v) => {
