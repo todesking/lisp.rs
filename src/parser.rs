@@ -87,7 +87,13 @@ fn many(s: &str, mut f: impl FnMut(char) -> bool) -> (&str, &str) {
 }
 
 fn skip_ws(s: &str) -> &str {
-    many(s, |c| c == ' ' || c == '\n').1
+    let s = many(s, |c| c == ' ' || c == '\n').1;
+    if s.starts_with(';') {
+        let s = s.find('\n').map(|i| &s[i + 1..]).unwrap_or(&"");
+        skip_ws(s)
+    } else {
+        s
+    }
 }
 
 fn consume<'a>(s: &'a str, pat: &str) -> Result<&'a str, ParseError> {
@@ -281,5 +287,16 @@ mod test {
                 list![Value::sym("unquote-splicing"), Value::sym("xs")]
             ]
         ]);
+    }
+    #[test]
+    fn test_comment() {
+        parse("1 ; aaaa").should_ok(1);
+        parse(
+            "(; aaa
+        1; bbb
+        ;ccc
+        2); ddd",
+        )
+        .should_ok(list![1, 2]);
     }
 }
