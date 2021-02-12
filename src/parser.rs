@@ -159,7 +159,7 @@ fn parse_num(s: &str) -> ParseResult {
 fn parse_symbol<'p, 's>(p: &'p mut Parser, s: &'s str) -> ParseResult<'s> {
     let (s1, s2) = many(
         s,
-        |c| matches!( c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '+' | '-' | '*' | '/' | '%' | '?' | '!' | '\'' | '<' | '>' | '=' | '#'),
+        |c| matches!( c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '+' | '-' | '*' | '/' | '%' | '?' | '!' | '\'' | '<' | '>' | '=' | '#' | '_'),
     );
     match s1 {
         "" => Err(ParseError::Unexpected(s2.to_owned())),
@@ -232,7 +232,7 @@ mod test {
         parse("a").should_ok(Value::sym("a"));
         parse("LONG-symbol'name?!?!").should_ok(Value::sym("LONG-symbol'name?!?!"));
         parse("f0").should_ok(Value::sym("f0"));
-        parse("+-*/%<>=#").should_ok(Value::sym("+-*/%<>=#"));
+        parse("+-*/%<>=#_").should_ok(Value::sym("+-*/%<>=#_"));
         parse("#unknown-symbol").should_error(ParseError::Unexpected("#unknown-symbol".to_owned()));
     }
 
