@@ -7,6 +7,42 @@ pub struct GlobalEnv {
     values: Vec<Value>,
 }
 
+pub struct ReadOnly<'a>(&'a GlobalEnv);
+
+pub trait GlobalWrite<'a>: AsRef<GlobalEnv> {
+    fn set_by_id(&mut self, id: usize, value: Value) -> Option<()>;
+    fn set<T: Into<String>>(&mut self, key: T, value: Value) -> Option<()>;
+}
+
+impl<'a> AsRef<GlobalEnv> for ReadOnly<'a> {
+    fn as_ref(&self) -> &GlobalEnv {
+        self.0
+    }
+}
+impl<'a> GlobalWrite<'a> for ReadOnly<'a> {
+    fn set_by_id(&mut self, _id: usize, _value: Value) -> Option<()> {
+        None
+    }
+    fn set<T: Into<String>>(&mut self, _key: T, _value: Value) -> Option<()> {
+        None
+    }
+}
+impl AsRef<GlobalEnv> for GlobalEnv {
+    fn as_ref(&self) -> &GlobalEnv {
+        self
+    }
+}
+impl<'a> GlobalWrite<'a> for GlobalEnv {
+    fn set_by_id(&mut self, id: usize, value: Value) -> Option<()> {
+        self.set_by_id(id, value);
+        Some(())
+    }
+    fn set<T: Into<String>>(&mut self, key: T, value: Value) -> Option<()> {
+        self.set(key, value);
+        Some(())
+    }
+}
+
 impl GlobalEnv {
     pub fn new() -> GlobalEnv {
         GlobalEnv {

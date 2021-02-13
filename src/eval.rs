@@ -11,6 +11,7 @@ pub use error::EvalError;
 
 mod global_env;
 pub use global_env::GlobalEnv;
+pub use global_env::GlobalWrite;
 
 mod local_env;
 pub use local_env::LocalEnv;
@@ -24,20 +25,24 @@ pub use compile::TopAst;
 
 pub type EvalResult = Result<Value, EvalError>;
 
-pub fn eval(e: &Value, global: &mut GlobalEnv) -> EvalResult {
-    let ast = compile::build_top_ast(e, global)?;
+pub fn eval<'v, 'g>(e: &Value, global: &mut impl GlobalWrite<'g>) -> EvalResult {
+    let ast = compile::build_top_ast(e, global.as_ref())?;
     eval_top_ast(&ast, global)
 }
 
 type Args = Rc<RefCell<Vec<Value>>>;
 
-pub fn eval_top_ast(top: &TopAst, global: &mut GlobalEnv) -> EvalResult {
+pub fn eval_top_ast<'v, 'g>(top: &'v TopAst, global: &mut impl GlobalWrite<'g>) -> EvalResult {
     let args = Rc::new(RefCell::new(Vec::new()));
     match top {
         TopAst::Define(name, value) => {
-            global.set(name, Value::nil());
+            global
+                .set(name, Value::nil())
+                .ok_or_else(|| EvalError::ReadOnly(name.to_owned()))?;
             let value = eval_local_loop(value, global, &None, &args)?;
-            global.set(name, value);
+            global
+                .set(name, value)
+                .ok_or_else(|| EvalError::ReadOnly(name.to_owned()))?;
             Ok(Value::nil())
         }
         TopAst::Expr(value) => eval_local_loop(&value, global, &None, &args),
@@ -58,9 +63,9 @@ impl Cont {
     }
 }
 
-fn eval_local_loop(
+fn eval_local_loop<'g>(
     ast: &Ast,
-    global: &mut GlobalEnv,
+    global: &mut impl GlobalWrite<'g>,
     local: &Option<Rc<LocalEnv>>,
     args: &Args,
 ) -> EvalResult {
@@ -73,15 +78,15 @@ fn eval_local_loop(
     }
 }
 
-fn eval_local(
+fn eval_local<'g>(
     ast: &Ast,
-    global: &mut GlobalEnv,
+    global: &mut impl GlobalWrite<'g>,
     local: &Option<Rc<LocalEnv>>,
     args: &Args,
 ) -> Result<Cont, EvalError> {
     match ast {
         Ast::Const(v) => Cont::ok_ret(v.clone()),
-        Ast::GetGlobal(global_id) => Cont::ok_ret(global.get(*global_id).clone()),
+        Ast::GetGlobal(global_id) => Cont::ok_ret(global.as_ref().get(*global_id).clone()),
         Ast::GetLocal(depth, index) => {
             let value = LocalEnv::get(local, *depth, *index);
             Cont::ok_ret(value)
@@ -131,9 +136,11 @@ fn eval_local(
             LocalEnv::set(local, *depth, *index, value);
             Cont::ok_ret(Value::nil())
         }
-        Ast::SetGlobal { id, value, .. } => {
+        Ast::SetGlobal { id, value, name } => {
             let value = eval_local_loop(value, global, local, args)?;
-            global.set_by_id(*id, value);
+            global
+                .set_by_id(*id, value)
+                .ok_or_else(|| EvalError::ReadOnly(name.to_owned()))?;
             Cont::ok_ret(Value::nil())
         }
         Ast::SetArg { index, value, .. } => {
@@ -185,9 +192,9 @@ fn eval_local(
     }
 }
 
-fn eval_quasiquote(
+fn eval_quasiquote<'g>(
     qq: &QuasiQuote,
-    global: &mut GlobalEnv,
+    global: &mut impl GlobalWrite<'g>,
     local: &Option<Rc<LocalEnv>>,
     args: &Args,
 ) -> EvalResult {
@@ -229,7 +236,11 @@ fn bind_args(param_count: usize, has_rest: bool, mut args: Vec<Value>) -> Result
     }
 }
 
-fn eval_apply(f: &Value, args: Vec<Value>, global: &mut GlobalEnv) -> Result<Cont, EvalError> {
+fn eval_apply<'g>(
+    f: &Value,
+    args: Vec<Value>,
+    global: &mut impl GlobalWrite<'g>,
+) -> Result<Cont, EvalError> {
     match f {
         Value::Ref(r) => match &**r {
             RefValue::Lambda {
@@ -271,7 +282,7 @@ mod test {
     use super::*;
     use crate::predef;
 
-    fn eval_str(s: &str, env: &mut GlobalEnv) -> EvalResult {
+    fn eval_str<'g>(s: &str, env: &mut impl GlobalWrite<'g>) -> EvalResult {
         let expr = s.parse::<Value>().expect("should valid sexpr");
         eval(&expr, env)
     }
