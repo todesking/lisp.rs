@@ -12,6 +12,7 @@ pub enum EvalError {
     DefineInLocalContext,
     ReadOnly(String),
     QuasiQuote,
+    Macro(Box<EvalError>),
 }
 
 impl EvalError {
@@ -34,6 +35,10 @@ impl EvalError {
             EvalError::DefineInLocalContext => ("DefineInLocalContext", Value::nil()),
             EvalError::ReadOnly(name) => ("ReadOnly", Value::sym(name)),
             EvalError::QuasiQuote => ("QuasiQuote", Value::nil()),
+            EvalError::Macro(err) => {
+                let (err, payload) = err.to_tuple();
+                ("Macro", list![Value::sym(err); payload])
+            }
         }
     }
 }

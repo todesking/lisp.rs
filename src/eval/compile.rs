@@ -8,6 +8,7 @@ use std::rc::Rc;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TopAst {
     Define(String, Ast),
+    DefMacro(String, Ast),
     Expr(Ast),
 }
 
@@ -57,6 +58,7 @@ pub enum Ast {
     },
     QuasiQuote(QuasiQuote),
     IfMatch(usize, Box<Ast>, MatchPattern, Box<Ast>, Box<Ast>),
+    GetMacro(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -194,31 +196,68 @@ fn illegal_argument_error<T>(value: Value) -> Result<T, EvalError> {
     Err(EvalError::IllegalArgument(value))
 }
 
+fn expand_macro(expr: &Value, global: &GlobalEnv) -> Result<Value, EvalError> {
+    match extract_macro_call(expr, global) {
+        None => Ok(expr.clone()),
+        Some((macro_body, macro_args)) => {
+            let macro_args = macro_args.to_vec().ok_or_else(|| {
+                EvalError::Macro(Box::new(EvalError::IllegalArgument(macro_args)))
+            })?;
+            let expr = crate::eval::eval_macro(&macro_body, macro_args, global)?;
+            Ok(expr)
+        }
+    }
+}
+
+fn extract_macro_call(expr: &Value, global: &GlobalEnv) -> Option<(Value, Value)> {
+    let (car, cdr) = expr.to_cons()?;
+    let name = car.as_sym()?;
+    let macro_def = global.lookup_macro(name)?;
+    Some((macro_def.clone(), cdr))
+}
+
 pub fn build_top_ast(expr: &Value, global: &GlobalEnv) -> Result<TopAst, EvalError> {
+    let expr = match expand_macro(expr, global) {
+        Ok(expr) => expr,
+        Err(err) => return Ok(TopAst::Expr(Ast::Error(err))),
+    };
     if let Some((car, cdr)) = expr.to_cons() {
-        if let Some("define") = car.as_sym().map(|r| &**r) {
-            if let Some((name, value)) = cdr.to_list2() {
-                match name {
-                    Value::Sym(name) => {
-                        let env = StaticEnv::new_with_current(global, &*name);
-                        let value = build_ast(&value, &env)?;
-                        Ok(TopAst::Define(name.to_string(), value))
+        match car.as_sym().map(|r| &**r) {
+            Some(deftype @ "define") | Some(deftype @ "defmacro") => {
+                if let Some((name, value)) = cdr.to_list2() {
+                    match name {
+                        Value::Sym(name) => {
+                            let env = StaticEnv::new_with_current(global, &*name);
+                            let value = build_ast(&value, &env)?;
+                            let ast = match deftype {
+                                "define" => TopAst::Define(name.to_string(), value),
+                                "defmacro" => TopAst::DefMacro(name.to_string(), value),
+                                _ => unreachable!(),
+                            };
+                            Ok(ast)
+                        }
+                        _ => Err(EvalError::SymbolRequired),
                     }
-                    _ => Err(EvalError::SymbolRequired),
+                } else {
+                    illegal_argument_error(cdr)
                 }
-            } else {
-                illegal_argument_error(cdr)
             }
-        } else {
-            let ast = build_ast(expr, &StaticEnv::new(global))?;
-            Ok(TopAst::Expr(ast))
+            _ => {
+                let ast = build_ast(&expr, &StaticEnv::new(global))?;
+                Ok(TopAst::Expr(ast))
+            }
         }
     } else {
-        let ast = build_ast(expr, &StaticEnv::new(global))?;
+        let ast = build_ast(&expr, &StaticEnv::new(global))?;
         Ok(TopAst::Expr(ast))
     }
 }
 fn build_ast(expr: &Value, env: &StaticEnv) -> Result<Ast, EvalError> {
+    let expr = match expand_macro(expr, &env.global) {
+        Ok(expr) => expr,
+        Err(err) => return Ok(Ast::Error(err)),
+    };
+    let expr = &expr;
     match expr {
         Value::Int(..) | Value::Bool(..) | Value::Nil => Ok(Ast::Const(expr.clone())),
         Value::Sym(name) => {
@@ -357,6 +396,13 @@ fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast,
                 Box::new(th),
                 Box::new(el),
             ))
+        }
+        Value::Sym(name) if &**name == "get-macro" => {
+            let name = cdr
+                .to_list1()
+                .and_then(|v| v.as_sym().cloned())
+                .ok_or_else(|| EvalError::IllegalArgument(cdr.clone()))?;
+            Ok(Ast::GetMacro(name.as_ref().to_owned()))
         }
         f => match cdr.to_vec() {
             None => illegal_argument_error(cdr.clone()),

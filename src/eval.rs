@@ -45,6 +45,13 @@ pub fn eval_top_ast<'v, 'g>(top: &'v TopAst, global: &mut impl GlobalWrite<'g>) 
                 .ok_or_else(|| EvalError::ReadOnly(name.to_owned()))?;
             Ok(Value::nil())
         }
+        TopAst::DefMacro(name, value) => {
+            let value = eval_local_loop(value, global, &None, &args)?;
+            global
+                .set_macro(name, value)
+                .ok_or_else(|| EvalError::ReadOnly(name.to_owned()))?;
+            Ok(Value::nil())
+        }
         TopAst::Expr(value) => eval_local_loop(&value, global, &None, &args),
     }
 }
@@ -69,13 +76,25 @@ fn eval_local_loop<'g>(
     local: &Option<Rc<LocalEnv>>,
     args: &Args,
 ) -> EvalResult {
-    let mut res = eval_local(ast, global, local, args)?;
+    let cont = eval_local(ast, global, local, args)?;
+    unwrap_cont(cont, global)
+}
+
+fn unwrap_cont<'g>(cont: Cont, global: &mut impl GlobalWrite<'g>) -> EvalResult {
+    let mut cont = cont;
     loop {
-        match res {
+        match cont {
             Cont::Ret(v) => return Ok(v),
-            Cont::Cont(f, args) => res = eval_apply(&f, args, global)?,
+            Cont::Cont(f, args) => cont = eval_apply(&f, args, global)?,
         }
     }
+}
+
+pub fn eval_macro(lambda: &Value, args: Vec<Value>, global: &GlobalEnv) -> EvalResult {
+    let mut global = global.read_only();
+    let macro_err = |err| EvalError::Macro(Box::new(err));
+    let cont = eval_apply(lambda, args, &mut global).map_err(macro_err)?;
+    unwrap_cont(cont, &mut global).map_err(macro_err)
 }
 
 fn eval_local<'g>(
@@ -189,6 +208,12 @@ fn eval_local<'g>(
                 eval_local(&el, global, local, args)
             }
         }
+        Ast::GetMacro(name) => global
+            .as_ref()
+            .lookup_macro(name)
+            .cloned()
+            .map(Cont::Ret)
+            .ok_or_else(|| EvalError::VariableNotFound(name.clone())),
     }
 }
 

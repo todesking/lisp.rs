@@ -1,17 +1,27 @@
 use crate::eval::EvalError;
 use crate::value::Value;
 
+use std::collections::HashMap;
+
 #[derive(Debug, Default)]
 pub struct GlobalEnv {
-    ids: std::collections::HashMap<String, usize>,
+    ids: HashMap<String, usize>,
     values: Vec<Value>,
+    macros: HashMap<String, Value>,
 }
 
 pub struct ReadOnly<'a>(&'a GlobalEnv);
 
 pub trait GlobalWrite<'a>: AsRef<GlobalEnv> {
-    fn set_by_id(&mut self, id: usize, value: Value) -> Option<()>;
-    fn set<T: Into<String>>(&mut self, key: T, value: Value) -> Option<()>;
+    fn set_by_id(&mut self, _id: usize, _value: Value) -> Option<()> {
+        None
+    }
+    fn set<T: Into<String>>(&mut self, _key: T, _value: Value) -> Option<()> {
+        None
+    }
+    fn set_macro<T: Into<String>>(&mut self, _key: T, _value: Value) -> Option<()> {
+        None
+    }
 }
 
 impl<'a> AsRef<GlobalEnv> for ReadOnly<'a> {
@@ -19,14 +29,7 @@ impl<'a> AsRef<GlobalEnv> for ReadOnly<'a> {
         self.0
     }
 }
-impl<'a> GlobalWrite<'a> for ReadOnly<'a> {
-    fn set_by_id(&mut self, _id: usize, _value: Value) -> Option<()> {
-        None
-    }
-    fn set<T: Into<String>>(&mut self, _key: T, _value: Value) -> Option<()> {
-        None
-    }
-}
+impl<'a> GlobalWrite<'a> for ReadOnly<'a> {}
 impl AsRef<GlobalEnv> for GlobalEnv {
     fn as_ref(&self) -> &GlobalEnv {
         self
@@ -34,30 +37,35 @@ impl AsRef<GlobalEnv> for GlobalEnv {
 }
 impl<'a> GlobalWrite<'a> for GlobalEnv {
     fn set_by_id(&mut self, id: usize, value: Value) -> Option<()> {
-        self.set_by_id(id, value);
+        GlobalEnv::set_by_id(self, id, value);
         Some(())
     }
     fn set<T: Into<String>>(&mut self, key: T, value: Value) -> Option<()> {
-        self.set(key, value);
+        GlobalEnv::set(self, key, value);
+        Some(())
+    }
+    fn set_macro<T: Into<String>>(&mut self, key: T, value: Value) -> Option<()> {
+        GlobalEnv::set_macro(self, key, value);
         Some(())
     }
 }
 
 impl GlobalEnv {
     pub fn new() -> GlobalEnv {
-        GlobalEnv {
-            ids: std::collections::HashMap::new(),
-            values: Vec::new(),
-        }
+        Default::default()
+    }
+    pub fn read_only(&self) -> ReadOnly {
+        ReadOnly(self)
     }
     pub fn lookup_global_id(&self, name: &str) -> Option<usize> {
         self.ids.get(name).copied()
     }
-
     pub fn lookup<T: AsRef<str>>(&self, key: &T) -> Option<&Value> {
         self.lookup_global_id(key.as_ref()).map(|i| &self.values[i])
     }
-
+    pub fn lookup_macro(&self, key: &str) -> Option<&Value> {
+        self.macros.get(key)
+    }
     pub fn next_id(&self) -> usize {
         self.values.len()
     }
@@ -76,6 +84,9 @@ impl GlobalEnv {
             self.values.push(value);
             self.ids.insert(key, self.values.len() - 1);
         }
+    }
+    pub fn set_macro<T: Into<String>>(&mut self, key: T, value: Value) {
+        self.macros.insert(key.into(), value);
     }
     pub fn set_fun<F>(&mut self, name: &str, f: F)
     where

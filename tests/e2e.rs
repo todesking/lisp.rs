@@ -30,6 +30,7 @@ mod test {
     testcase!(assert_error);
     testcase!(letrec);
     testcase!(list_ops);
+    testcase!(macros);
     testcase!(pattern_match);
     testcase!(quasiquote);
     testcase!(variable_lookup);
