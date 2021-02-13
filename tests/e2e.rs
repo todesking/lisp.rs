@@ -1,31 +1,10 @@
-use std::fs;
-use std::path::Path;
-
-fn run_tests_in(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    for file in fs::read_dir(path)? {
-        let file = file?;
-        let name = file
-            .path()
-            .to_str()
-            .expect("file.path().to_str() failed")
-            .to_string();
-        if name.ends_with(".lisp") {
-            run_test(&file.path(), &name)?;
-        } else {
-            run_tests_in(&file.path())?;
-        }
-    }
-    Ok(())
-}
-
-fn run_test(path: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let src = fs::read_to_string(path)?;
-    let exprs = lisprs::parse_all(src.as_ref())?;
+fn run_test_str(src: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let exprs = lisprs::parse_all(src)?;
 
     let mut global = lisprs::predef();
     for expr in exprs {
         lisprs::eval(&expr, &mut global).map_err(|e| {
-            println!("Test {} failed.", name);
+            println!("Test failed.");
             println!("  Expr: {}", expr.to_string());
             println!("     => {}", e.to_string());
             e
@@ -35,7 +14,23 @@ fn run_test(path: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[test]
-fn test_e2e() -> Result<(), Box<dyn std::error::Error>> {
-    run_tests_in(Path::new("test-lisp"))
+macro_rules! testcase {
+    ($name:tt) => {
+        #[test]
+        fn $name() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
+            run_test_str(include_str!(concat!("e2e/", stringify!($name), ".lisp")))
+        }
+    };
+}
+
+mod test {
+    use super::run_test_str;
+
+    testcase!(arithmetic);
+    testcase!(assert_error);
+    testcase!(letrec);
+    testcase!(list_ops);
+    testcase!(pattern_match);
+    testcase!(quasiquote);
+    testcase!(variable_lookup);
 }
