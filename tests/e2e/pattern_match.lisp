@@ -61,3 +61,8 @@
  (if-match '(1 2)
   ((a _ _) a) #f)
  #f)
+
+(define f
+ (lambda (x)
+  (if-match 0 (_ x) 0)))
+(assert-eq (f 1) 1)

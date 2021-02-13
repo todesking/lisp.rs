@@ -347,7 +347,7 @@ fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast,
                 rest_name: None,
                 bodies: Rc::from(vec![]),
                 expr: Rc::new(th),
-                depth: env.local_depth,
+                depth: th_env.local_depth,
             };
             let el = build_ast(&el, env)?;
             Ok(Ast::IfMatch(
