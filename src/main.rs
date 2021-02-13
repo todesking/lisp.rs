@@ -97,7 +97,7 @@ fn read_eval_print(s: &str, ctx: &mut Ctx) {
                 Err(err) => println!("Compile error: {}", err),
                 Ok(ast) => {
                     if ctx.show_ast {
-                        println!("AST: {:?}", ast);
+                        println!("AST: {:#?}", ast);
                     }
                     let v = lisprs::eval::eval_top_ast(&ast, &mut ctx.global);
                     match v {

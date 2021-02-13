@@ -86,12 +86,12 @@ fn eval_local<'g>(
 ) -> Result<Cont, EvalError> {
     match ast {
         Ast::Const(v) => Cont::ok_ret(v.clone()),
-        Ast::GetGlobal(global_id) => Cont::ok_ret(global.as_ref().get(*global_id).clone()),
-        Ast::GetLocal(depth, index) => {
+        Ast::GetGlobal(_, global_id) => Cont::ok_ret(global.as_ref().get(*global_id).clone()),
+        Ast::GetLocal(_, depth, index) => {
             let value = LocalEnv::get(local, *depth, *index);
             Cont::ok_ret(value)
         }
-        Ast::GetArgument(index) => Cont::ok_ret(args.borrow()[*index].clone()),
+        Ast::GetArgument(_, index) => Cont::ok_ret(args.borrow()[*index].clone()),
         Ast::If(cond, th, el) => {
             let cond = eval_local_loop(cond, global, local, args)?;
             if let Some(b) = bool::extract(&cond) {
@@ -165,7 +165,7 @@ fn eval_local<'g>(
             }
         },
         Ast::Error(err) => Err(err.clone()),
-        Ast::GetRec(depth, index) => Cont::ok_ret(LocalEnv::get_rec(local, *depth, *index)),
+        Ast::GetRec(_, depth, index) => Cont::ok_ret(LocalEnv::get_rec(local, *depth, *index)),
         Ast::LetRec {
             rec_depth,
             defs,

@@ -14,9 +14,9 @@ pub enum TopAst {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ast {
     Const(Value),
-    GetGlobal(usize),
-    GetLocal(usize, usize),
-    GetArgument(usize),
+    GetGlobal(String, usize),
+    GetLocal(String, usize, usize),
+    GetArgument(String, usize),
     If(Box<Ast>, Box<Ast>, Box<Ast>),
     Lambda {
         param_names: Vec<Rc<str>>,
@@ -48,7 +48,7 @@ pub enum Ast {
         expr: Box<Ast>,
     },
     Error(EvalError),
-    GetRec(usize, usize),
+    GetRec(String, usize, usize),
     LetRec {
         rec_depth: usize,
         defs: Vec<LambdaDef>,
@@ -221,13 +221,16 @@ pub fn build_top_ast(expr: &Value, global: &GlobalEnv) -> Result<TopAst, EvalErr
 fn build_ast(expr: &Value, env: &StaticEnv) -> Result<Ast, EvalError> {
     match expr {
         Value::Int(..) | Value::Bool(..) | Value::Nil => Ok(Ast::Const(expr.clone())),
-        Value::Sym(name) => match env.lookup(name) {
-            Some(VarRef::Global(id)) => Ok(Ast::GetGlobal(id)),
-            Some(VarRef::Local(depth, index)) => Ok(Ast::GetLocal(depth, index)),
-            Some(VarRef::Rec(depth, index)) => Ok(Ast::GetRec(depth, index)),
-            Some(VarRef::Argument(index)) => Ok(Ast::GetArgument(index)),
-            None => Ok(Ast::Error(EvalError::VariableNotFound(name.to_string()))),
-        },
+        Value::Sym(name) => {
+            let name = name.as_ref().to_owned();
+            match env.lookup(&name) {
+                Some(VarRef::Global(id)) => Ok(Ast::GetGlobal(name, id)),
+                Some(VarRef::Local(depth, index)) => Ok(Ast::GetLocal(name, depth, index)),
+                Some(VarRef::Rec(depth, index)) => Ok(Ast::GetRec(name, depth, index)),
+                Some(VarRef::Argument(index)) => Ok(Ast::GetArgument(name, index)),
+                None => Ok(Ast::Error(EvalError::VariableNotFound(name.to_string()))),
+            }
+        }
         Value::Ref(r) => match &**r {
             RefValue::Cons(car, cdr) => build_ast_from_cons(&car.borrow(), &cdr.borrow(), env),
             RefValue::RecLambda { .. } | RefValue::Lambda { .. } | RefValue::Fun { .. } => {
