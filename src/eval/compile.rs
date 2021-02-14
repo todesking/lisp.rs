@@ -10,12 +10,16 @@ pub enum TopAst {
     Define(String, Ast),
     DefMacro(String, Ast),
     Expr(Ast),
+    Begin(Vec<TopAst>, Box<TopAst>),
 }
 impl TopAst {
     // Note: this is for debugging purporse only.
     // Consistency(i.e. ast == build_top_ast(ast.to_value())) not guaranteed.
     pub fn to_value(&self) -> Value {
         match self {
+            TopAst::Begin(asts, last) => {
+                list!["begin"; Value::list_with_last(asts.iter().map(|x| x.to_value()).collect::<Vec<_>>().iter(), list![last.to_value()])]
+            }
             TopAst::Define(name, ast) => {
                 list!["__define", name; ast.to_value()]
             }
@@ -353,6 +357,20 @@ pub fn build_top_ast(expr: &Value, global: &GlobalEnv) -> Result<TopAst, EvalErr
     };
     if let Some((car, cdr)) = expr.to_cons() {
         match car.as_sym().map(|r| &**r) {
+            Some("begin") => {
+                let values = cdr
+                    .to_vec()
+                    .ok_or_else(|| EvalError::IllegalArgument(cdr.clone()))?;
+                let mut values = values
+                    .iter()
+                    .map(|v| build_top_ast(v, global))
+                    .collect::<Result<Vec<_>, _>>()?;
+                if let Some(last) = values.pop() {
+                    Ok(TopAst::Begin(values, last.into()))
+                } else {
+                    Err(EvalError::IllegalArgument(list![]))
+                }
+            }
             Some(deftype @ "__define") | Some(deftype @ "__defmacro") => {
                 if let Some((name, value)) = cdr.to_list2() {
                     match name {

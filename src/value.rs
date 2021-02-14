@@ -135,8 +135,13 @@ impl Value {
         Value::Ref(Rc::new(v))
     }
     pub fn list<'a>(xs: impl std::iter::DoubleEndedIterator<Item = &'a Value>) -> Value {
-        xs.rev()
-            .fold(Value::nil(), |a, x| Value::cons(x.clone(), a))
+        Self::list_with_last(xs, Value::Nil)
+    }
+    pub fn list_with_last<'a>(
+        xs: impl std::iter::DoubleEndedIterator<Item = &'a Value>,
+        last: Value,
+    ) -> Value {
+        xs.rev().fold(last, |a, x| Value::cons(x.clone(), a))
     }
     // TODO: Use macro to abstract funX functions
     pub fn fun0<F, R>(name: &str, f: F) -> Value

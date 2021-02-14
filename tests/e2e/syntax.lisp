@@ -25,3 +25,8 @@
 
 (defmacro (my-twice expr) `(+ ,expr ,expr))
 (assert-eq (my-twice 123) 246)
+
+(begin
+  (define x 1)
+  (define y 2))
+(assert-eq `(,x ,y) '(1 2))

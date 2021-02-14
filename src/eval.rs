@@ -35,6 +35,12 @@ type Args = Rc<RefCell<Vec<Value>>>;
 pub fn eval_top_ast<'v, 'g>(top: &'v TopAst, global: &mut impl GlobalWrite<'g>) -> EvalResult {
     let args = Rc::new(RefCell::new(Vec::new()));
     match top {
+        TopAst::Begin(asts, ast) => {
+            for ast in asts {
+                eval_top_ast(ast, global)?;
+            }
+            eval_top_ast(ast, global)
+        }
         TopAst::Define(name, value) => {
             global
                 .set(name, Value::nil())
