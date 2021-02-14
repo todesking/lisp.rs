@@ -259,7 +259,9 @@ fn build_ast(expr: &Value, env: &StaticEnv) -> Result<Ast, EvalError> {
     };
     let expr = &expr;
     match expr {
-        Value::Int(..) | Value::Bool(..) | Value::Nil => Ok(Ast::Const(expr.clone())),
+        Value::Int(..) | Value::Bool(..) | Value::Nil | Value::Str(..) => {
+            Ok(Ast::Const(expr.clone()))
+        }
         Value::Sym(name) => {
             let name = name.as_ref().to_owned();
             match env.lookup(&name) {
@@ -433,7 +435,9 @@ fn build_pattern(pat: &Value, env: &mut Vec<String>) -> Result<MatchPattern, Eva
                 Ok(MatchPattern::Capture(index))
             }
         }
-        Value::Int(..) | Value::Bool(..) | Value::Nil => Ok(MatchPattern::Const(pat.clone())),
+        Value::Int(..) | Value::Bool(..) | Value::Nil | Value::Str(..) => {
+            Ok(MatchPattern::Const(pat.clone()))
+        }
         Value::Ref(r) => match &**r {
             RefValue::Cons(car, cdr) => {
                 let car = car.borrow();

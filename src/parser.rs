@@ -110,6 +110,7 @@ fn parse_expr<'p, 's>(p: &'p mut Parser, s: &'s str) -> ParseResult<'s> {
         .or_else(|_| parse_quasiquote(p, s))
         .or_else(|_| parse_unquote_splicing(p, s))
         .or_else(|_| parse_unquote(p, s))
+        .or_else(|_| parse_str(s))
         .or_else(|_| parse_num(s))
         .or_else(|_| parse_list(p, s))
         .or_else(|_| parse_symbol(p, s))
@@ -141,6 +142,45 @@ fn parse_unquote<'p, 's>(p: &'p mut Parser, s: &'s str) -> ParseResult<'s> {
     let (e, s) = parse_expr(p, s)?;
     let e = list![p.new_sym("unquote"), e];
     Ok((e, s))
+}
+
+fn parse_str(s: &str) -> ParseResult {
+    let s = consume(s, "\"")?;
+    let (content, s) = parse_str_body(s)?;
+    let s = consume(s, "\"")?;
+    Ok((Value::str(&content), s))
+}
+
+fn parse_str_body(s: &str) -> Result<(String, &str), ParseError> {
+    let mut content = String::new();
+    let mut iter = s.char_indices();
+    loop {
+        if let Some((i, ch)) = iter.next() {
+            match ch {
+                '\\' => {
+                    if let Some((_, ch)) = iter.next() {
+                        let ch = match ch {
+                            'n' => '\n',
+                            '\\' => '\\',
+                            '"' => '"',
+                            _ => return Err(ParseError::Unexpected(format!("\\{}", ch))),
+                        };
+                        content.push(ch);
+                    } else {
+                        return Err(ParseError::Unexpected("".to_owned()));
+                    }
+                }
+                '"' => {
+                    return Ok((content, &s[i..]));
+                }
+                _ => {
+                    content.push(ch);
+                }
+            }
+        } else {
+            return Err(ParseError::Unexpected("".to_owned()));
+        }
+    }
 }
 
 fn parse_num(s: &str) -> ParseResult {
@@ -215,6 +255,16 @@ mod test {
         fn should_error(&self, e: ParseError) {
             assert_eq!(self, &Err(e));
         }
+    }
+
+    #[test]
+    fn test_string() {
+        parse(r#""foo""#).should_ok(Value::str("foo"));
+        parse(r#""foo\nbar""#).should_ok(Value::str("foo\nbar"));
+        parse(r#""\\""#).should_ok(Value::str("\\"));
+        parse(r#""\"""#).should_ok(Value::str("\""));
+        parse(r#"""#).should_error(ParseError::Unexpected("\"".to_owned()));
+        parse(r#""foo"#).should_error(ParseError::Unexpected("\"foo".to_owned()));
     }
 
     #[test]

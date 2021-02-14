@@ -19,3 +19,16 @@
     (if (nil? l)
       l
       (cons (f (car l)) (map f (cdr l))))))
+
+(define gensym
+  ((lambda (next-id)
+    (lambda args
+      ((lambda (prefix)
+         ((lambda (sym) (set-local! next-id (+ 1 next-id)) sym)
+          (make-symbol (str-+ "<gensym-" prefix ">"))))
+       (if-match args
+        (() "")
+        (if-match args
+         ((prefix) prefix)
+         (error 'gensym 'illegal-argument)))))) 0))
+

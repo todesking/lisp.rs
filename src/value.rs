@@ -10,6 +10,7 @@ pub enum Value {
     Bool(bool),
     Int(i32),
     Sym(Rc<str>),
+    Str(Rc<str>),
     Nil,
     Ref(Rc<RefValue>),
 }
@@ -86,6 +87,9 @@ impl Value {
     }
     pub fn sym(name: &str) -> Value {
         Value::Sym(Rc::from(name))
+    }
+    pub fn str(name: &str) -> Value {
+        Value::Str(Rc::from(name))
     }
     pub fn fun<F>(name: &str, f: F) -> Value
     where
@@ -338,12 +342,33 @@ fn fmt_list(
 
 impl std::fmt::Display for Value {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        use std::fmt::Write;
         match self {
             Value::Int(v) => fmt.write_fmt(format_args!("{}", v)),
             Value::Bool(true) => fmt.write_str("#t"),
             Value::Bool(false) => fmt.write_str("#f"),
             Value::Sym(v) => fmt.write_str(v),
             Value::Nil => fmt.write_str("()"),
+            Value::Str(s) => {
+                fmt.write_str("\"")?;
+                for ch in s.chars() {
+                    match ch {
+                        '\\' => {
+                            fmt.write_str(r#"\\"#)?;
+                        }
+                        '\n' => {
+                            fmt.write_str(r#"\n"#)?;
+                        }
+                        '"' => {
+                            fmt.write_str(r#"\""#)?;
+                        }
+                        _ => {
+                            fmt.write_char(ch)?;
+                        }
+                    }
+                }
+                fmt.write_str("\"")
+            }
             Value::Ref(r) => fmt.write_fmt(format_args!("{}", r)),
         }
     }
@@ -524,6 +549,8 @@ mod test {
         assert_eq!(list![Value::sym("quasiquote"), 1].to_string(), "`1");
         assert_eq!(list![Value::sym("unquote"), 1].to_string(), ",1");
         assert_eq!(list![Value::sym("unquote-splicing"), 1].to_string(), ",@1");
+        assert_eq!(Value::str("foo").to_string(), r#""foo""#);
+        assert_eq!(Value::str("\n\"\\").to_string(), r#""\n\"\\""#);
     }
 
     #[test]
