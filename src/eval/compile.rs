@@ -491,13 +491,12 @@ fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast,
             let defs = defs.to_vec().ok_or_else(err)?;
             let (env, defs) = extract_lambda_defs(&defs, env, err)?;
             let body = body.to_vec().ok_or_else(err)?;
-            let body: Vec<Ast> = body
+            let mut body = body
                 .iter()
                 .map(|b| build_ast(b, &env))
                 .collect::<Result<Vec<Ast>, EvalError>>()?;
-            let (expr, body) = body.split_last().ok_or_else(err)?;
-            let body = body.to_vec();
-            let expr = Box::new(expr.clone());
+            let expr = body.pop().ok_or_else(err)?;
+            let expr = Box::new(expr);
             let defs = defs.into_iter().map(|d| d.1).collect();
             let rec_depth = env.rec_depth;
             Ok(Ast::LetRec {
@@ -703,9 +702,9 @@ fn extract_raw_lambda_def(
 ) -> Option<(Rc<str>, Vec<Rc<str>>, Option<Rc<str>>, Vec<Value>, Value)> {
     let (names, bodies) = raw.to_cons()?;
     let (name, param_names, rest_name) = extract_lambda_names(&names)?;
-    let bodies = bodies.to_vec()?;
-    let (expr, bodies) = bodies.split_last()?;
-    Some((name, param_names, rest_name, bodies.to_vec(), expr.clone()))
+    let mut bodies = bodies.to_vec()?;
+    let expr = bodies.pop()?;
+    Some((name, param_names, rest_name, bodies, expr))
 }
 
 #[allow(clippy::type_complexity)]
