@@ -208,6 +208,12 @@ impl Value {
             _ => None,
         }
     }
+    pub fn as_str(&self) -> Option<&Rc<str>> {
+        match self {
+            Value::Str(value) => Some(value),
+            _ => None,
+        }
+    }
     pub fn to_list1(&self) -> Option<Value> {
         let (car, cdr) = self.to_cons()?;
         if cdr == Value::Nil {
@@ -524,7 +530,10 @@ mod test {
         assert_eq!(Value::int(42).to_string(), "42");
         assert_eq!(Value::bool(true).to_string(), "#t");
         assert_eq!(Value::bool(false).to_string(), "#f");
+
         assert_eq!(Value::sym("foo").to_string(), "foo");
+        assert_eq!(Value::sym("foo bar baz").to_string(), "foo bar baz");
+
         assert_eq!(Value::nil().to_string(), "()");
         assert_eq!(list![1, 2, 3].to_string(), "(1 2 3)");
         assert_eq!(Value::cons(1, Value::cons(2, 3)).to_string(), "(1 2 . 3)");

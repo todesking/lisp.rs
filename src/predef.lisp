@@ -25,7 +25,7 @@
     (lambda args
       ((lambda (prefix)
          ((lambda (sym) (set-local! next-id (+ 1 next-id)) sym)
-          (make-symbol (str-+ "<gensym-" prefix ">"))))
+          (make-symbol (str-+ "<gensym-" (to-string prefix) (to-string next-id)">"))))
        (if-match args
         (() "")
         (if-match args

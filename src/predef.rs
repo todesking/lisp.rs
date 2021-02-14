@@ -2,6 +2,8 @@ use crate::eval::EvalError;
 use crate::eval::GlobalEnv;
 use crate::value::Extract;
 use crate::value::Value;
+use std::rc::Rc;
+
 pub fn load(global: &mut GlobalEnv) {
     global.set("true", Value::Bool(true));
     global.set("false", Value::Bool(false));
@@ -9,6 +11,37 @@ pub fn load(global: &mut GlobalEnv) {
 
     global.set_fun("error", |args| {
         Err(EvalError::User(Value::list(args.iter())))
+    });
+
+    global.set_fun("make-symbol", |args| {
+        if args.len() != 1 {
+            return Err(EvalError::illegal_argument(args));
+        }
+        if let Some(s) = args[0].as_str() {
+            Ok(Value::Sym(s.clone()))
+        } else {
+            Err(EvalError::illegal_argument(args))
+        }
+    });
+
+    global.set_fun1("to-string", |v| {
+        let content = match v {
+            Value::Sym(v) | Value::Str(v) => v.clone(),
+            Value::Int(v) => Rc::from(v.to_string()),
+            Value::Bool(v) => Rc::from(v.to_string()),
+            _ => return Err(EvalError::illegal_argument(&[v.clone()])),
+        };
+        Ok(Value::Str(content))
+    });
+    global.set_fun("str-+", |args| {
+        let args = args
+            .iter()
+            .map(|v| match v {
+                Value::Str(v) => Ok(v.as_ref()),
+                _ => Err(EvalError::illegal_argument(args)),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Value::Str(Rc::from(args.join(""))))
     });
 
     load_arithmetic(global);

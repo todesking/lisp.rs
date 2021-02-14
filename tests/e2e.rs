@@ -34,4 +34,5 @@ mod test {
     testcase!(pattern_match);
     testcase!(quasiquote);
     testcase!(variable_lookup);
+    testcase!(gensym);
 }
