@@ -15,6 +15,12 @@
   (lambda args
     `(__defmacro ,@(extract-define-args args))))
 
+(define (cons x y) `(,x . ,y))
+(define (car x)
+  (if-match x ((x . y) x) (error 'car 'not-cons x)))
+(define (cdr x)
+  (if-match x ((x . y) y) (error 'cdr 'not-cons x)))
+
 (define (nil? x) (eq? x ()))
 (define (map f l)
   (if (nil? l)

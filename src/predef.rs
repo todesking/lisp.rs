@@ -77,33 +77,6 @@ fn load_arithmetic(global: &mut GlobalEnv) {
 }
 
 fn load_list_ops(global: &mut GlobalEnv) {
-    global.set(
-        "cons",
-        Value::fun("cons", |args| {
-            let mut it = args.iter();
-            let x1 = it.next().ok_or_else(|| EvalError::illegal_argument(args))?;
-            let x2 = it.next().ok_or_else(|| EvalError::illegal_argument(args))?;
-            if it.next() == None {
-                Ok(Value::cons(x1.clone(), x2.clone()))
-            } else {
-                Err(EvalError::illegal_argument(args))
-            }
-        }),
-    );
-    global.set_fun1("car", |x1| {
-        if let Some((car, _)) = x1.to_cons() {
-            Ok(car)
-        } else {
-            Err(EvalError::InvalidArg)
-        }
-    });
-    global.set_fun1("cdr", |x1| {
-        if let Some((_, cdr)) = x1.to_cons() {
-            Ok(cdr)
-        } else {
-            Err(EvalError::InvalidArg)
-        }
-    });
     global.set_fun2("set-car!", |x, v| x.set_car(v.clone(), true));
     global.set_fun2("set-cdr!", |x, v| x.set_cdr(v.clone(), true));
     global.set_fun2("unsafe-set-car!", |x, v| x.set_car(v.clone(), false));
