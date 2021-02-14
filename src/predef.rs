@@ -5,8 +5,6 @@ use crate::value::Value;
 use std::rc::Rc;
 
 pub fn load(global: &mut GlobalEnv) {
-    global.set("true", Value::Bool(true));
-    global.set("false", Value::Bool(false));
     global.set_fun2("eq?", |lhs, rhs| Ok(Value::bool(lhs == rhs)));
 
     global.set_fun("error", |args| {

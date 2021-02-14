@@ -29,6 +29,9 @@
      (map (lambda (l) (car (cdr l))) defs)))
    (map extract-define-args defs)))
 
+(define true #t)
+(define false #f)
+
 (define list (lambda x x))
 
 (define assert-eq
