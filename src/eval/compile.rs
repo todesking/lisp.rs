@@ -223,15 +223,15 @@ pub fn build_top_ast(expr: &Value, global: &GlobalEnv) -> Result<TopAst, EvalErr
     };
     if let Some((car, cdr)) = expr.to_cons() {
         match car.as_sym().map(|r| &**r) {
-            Some(deftype @ "define") | Some(deftype @ "defmacro") => {
+            Some(deftype @ "__define") | Some(deftype @ "__defmacro") => {
                 if let Some((name, value)) = cdr.to_list2() {
                     match name {
                         Value::Sym(name) => {
                             let env = StaticEnv::new_with_current(global, &*name);
                             let value = build_ast(&value, &env)?;
                             let ast = match deftype {
-                                "define" => TopAst::Define(name.to_string(), value),
-                                "defmacro" => TopAst::DefMacro(name.to_string(), value),
+                                "__define" => TopAst::Define(name.to_string(), value),
+                                "__defmacro" => TopAst::DefMacro(name.to_string(), value),
                                 _ => unreachable!(),
                             };
                             Ok(ast)
@@ -290,7 +290,7 @@ fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast,
                 illegal_argument_error(cdr.clone())
             }
         }
-        Value::Sym(name) if &**name == "define" => Err(EvalError::DefineInLocalContext),
+        Value::Sym(name) if &**name == "__define" => Err(EvalError::DefineInLocalContext),
         Value::Sym(name) if &**name == "if" => {
             if let Some((cond, th, el)) = cdr.to_list3() {
                 let cond = build_ast(&cond, env)?;

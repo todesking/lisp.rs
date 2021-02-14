@@ -366,24 +366,25 @@ mod test {
         let mut env = GlobalEnv::new();
 
         eval_str("x", &mut env).should_error(EvalError::VariableNotFound("x".into()));
-        eval_str("(define x 1)", &mut env).should_ok(Value::Nil);
+        eval_str("(__define x 1)", &mut env).should_ok(Value::Nil);
         eval_str("x", &mut env).should_ok(1);
 
-        eval_str("(define x '1)", &mut env).should_ok(Value::Nil);
+        eval_str("(__define x '1)", &mut env).should_ok(Value::Nil);
         eval_str("x", &mut env).should_ok(1);
 
-        eval_str("(define x 2 3)", &mut env).should_error(EvalError::IllegalArgument(list![
+        eval_str("(__define x 2 3)", &mut env).should_error(EvalError::IllegalArgument(list![
             Value::sym("x"),
             2,
             3
         ]));
-        eval_str("(define 1 2)", &mut env).should_error(EvalError::SymbolRequired);
-        eval_str("(define x aaa)", &mut env)
+        eval_str("(__define 1 2)", &mut env).should_error(EvalError::SymbolRequired);
+        eval_str("(__define x aaa)", &mut env)
             .should_error(EvalError::VariableNotFound("aaa".into()));
 
-        eval_str("(if 1 (define x 1) ())", &mut env).should_error(EvalError::DefineInLocalContext);
+        eval_str("(if 1 (__define x 1) ())", &mut env)
+            .should_error(EvalError::DefineInLocalContext);
 
-        eval_str("(define loop loop)", &mut env).should_nil();
+        eval_str("(__define loop loop)", &mut env).should_nil();
         eval_str("loop", &mut env).should_nil();
     }
 
@@ -422,12 +423,12 @@ mod test {
     fn test_lambda_varargs() {
         let mut env = GlobalEnv::new();
 
-        eval_str("(define my-list (lambda x x))", &mut env).should_ok(Value::Nil);
+        eval_str("(__define my-list (lambda x x))", &mut env).should_ok(Value::Nil);
         eval_str("(my-list 1 2 3)", &mut env).should_ok(list!(1, 2, 3));
         eval_str("(my-list)", &mut env).should_ok(list!());
 
-        eval_str("(define my-head (lambda (x . xs) x))", &mut env).should_ok(Value::Nil);
-        eval_str("(define my-tail (lambda (x . xs) xs))", &mut env).should_ok(Value::Nil);
+        eval_str("(__define my-head (lambda (x . xs) x))", &mut env).should_ok(Value::Nil);
+        eval_str("(__define my-tail (lambda (x . xs) xs))", &mut env).should_ok(Value::Nil);
         eval_str("(my-head 1)", &mut env).should_ok(1);
         eval_str("(my-tail 1)", &mut env).should_ok(list!());
         eval_str("(my-head 1 2)", &mut env).should_ok(1);

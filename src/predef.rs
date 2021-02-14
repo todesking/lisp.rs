@@ -46,7 +46,7 @@ pub fn load(global: &mut GlobalEnv) {
 
     load_arithmetic(global);
     load_list_ops(global);
-    load_from_str(include_str!("predef.lisp"), global);
+    load_from_str(include_str!("predef.lisp"), global).expect("error in predef.lisp")
 }
 
 fn load_arithmetic(global: &mut GlobalEnv) {
@@ -112,9 +112,10 @@ fn load_list_ops(global: &mut GlobalEnv) {
     global.set_fun2("unsafe-set-cdr!", |x, v| x.set_cdr(v.clone(), false));
 }
 
-fn load_from_str(s: &str, global: &mut GlobalEnv) {
+fn load_from_str(s: &str, global: &mut GlobalEnv) -> Result<(), (Value, EvalError)> {
     let predef_exprs = crate::parse_all(s).expect("Parse error at predef.lisp");
     for predef_expr in predef_exprs {
-        crate::eval(&predef_expr, global).expect("Eval error at predef.lisp");
+        crate::eval(&predef_expr, global).map_err(|err| (predef_expr.clone(), err))?;
     }
+    Ok(())
 }

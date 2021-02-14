@@ -1,3 +1,34 @@
+(__define extract-define-args
+ (lambda (args)
+   (if-match args
+    (((name . args) body . rest)
+     `(,name (lambda ,args ,body ,@rest)))
+    (if-match args
+     ((name expr) `(,name ,expr))
+     (error 'syntax-error args)))))
+
+(__defmacro define
+  (lambda args
+    `(__define ,@(extract-define-args args))))
+
+(__defmacro defmacro
+  (lambda args
+    `(__defmacro ,@(extract-define-args args))))
+
+(define (nil? x) (eq? x ()))
+(define (map f l)
+  (if (nil? l)
+    l
+    (cons (f (car l)) (map f (cdr l)))))
+
+(defmacro (let defs body . rest)
+  ((lambda (defs)
+    ((lambda (def-names def-exprs)
+      `((lambda (,@def-names) ,body ,@rest) ,@def-exprs))
+     (map car defs)
+     (map (lambda (l) (car (cdr l))) defs)))
+   (map extract-define-args defs)))
+
 (define list (lambda x x))
 
 (define assert-eq
@@ -12,14 +43,6 @@
         (f))
       err)))
 
-(define nil? (lambda (x) (eq? x ())))
-
-(define map
-  (lambda (f l)
-    (if (nil? l)
-      l
-      (cons (f (car l)) (map f (cdr l))))))
-
 (define gensym
   ((lambda (next-id)
     (lambda args
@@ -31,10 +54,3 @@
         (if-match args
          ((prefix) prefix)
          (error 'gensym 'illegal-argument)))))) 0))
-
-(defmacro let
-  (lambda (defs body . rest)
-    ((lambda (def-names def-exprs)
-      `((lambda (,@def-names) ,body ,@rest) ,@def-exprs))
-     (map car defs)
-     (map (lambda (l) (car (cdr l))) defs))))
