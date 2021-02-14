@@ -5,11 +5,18 @@ use crate::value::Value;
 pub fn load(global: &mut GlobalEnv) {
     global.set("true", Value::Bool(true));
     global.set("false", Value::Bool(false));
+    global.set_fun2("eq?", |lhs, rhs| Ok(Value::bool(lhs == rhs)));
 
     global.set_fun("error", |args| {
         Err(EvalError::User(Value::list(args.iter())))
     });
 
+    load_arithmetic(global);
+    load_list_ops(global);
+    load_from_str(include_str!("predef.lisp"), global);
+}
+
+fn load_arithmetic(global: &mut GlobalEnv) {
     global.set("+", Value::fun_reduce("+", |l: i32, r: i32| l + r));
     global.set_fun("-", |args| {
         let mut it = args.iter();
@@ -32,12 +39,13 @@ pub fn load(global: &mut GlobalEnv) {
     global.set("*", Value::fun_reduce("*", |l: i32, r: i32| l * r));
     global.set("/", Value::fun2("/", |l: i32, r: i32| l / r));
     global.set("%", Value::fun2("%", |l: i32, r: i32| l % r));
-    global.set_fun2("eq?", |lhs, rhs| Ok(Value::bool(lhs == rhs)));
     global.set("<", Value::fun2("<", |l: i32, r: i32| l < r));
     global.set("<=", Value::fun2("<=", |l: i32, r: i32| l <= r));
     global.set(">", Value::fun2(">", |l: i32, r: i32| l > r));
     global.set(">=", Value::fun2(">=", |l: i32, r: i32| l >= r));
+}
 
+fn load_list_ops(global: &mut GlobalEnv) {
     global.set(
         "cons",
         Value::fun("cons", |args| {
@@ -69,9 +77,10 @@ pub fn load(global: &mut GlobalEnv) {
     global.set_fun2("set-cdr!", |x, v| x.set_cdr(v.clone(), true));
     global.set_fun2("unsafe-set-car!", |x, v| x.set_car(v.clone(), false));
     global.set_fun2("unsafe-set-cdr!", |x, v| x.set_cdr(v.clone(), false));
+}
 
-    let predef_src = include_str!("predef.lisp");
-    let predef_exprs = crate::parse_all(predef_src).expect("Parse error at predef.lisp");
+fn load_from_str(s: &str, global: &mut GlobalEnv) {
+    let predef_exprs = crate::parse_all(s).expect("Parse error at predef.lisp");
     for predef_expr in predef_exprs {
         crate::eval(&predef_expr, global).expect("Eval error at predef.lisp");
     }
