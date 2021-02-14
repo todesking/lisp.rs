@@ -524,6 +524,17 @@ impl ToValue for bool {
     }
 }
 
+impl ToValue for &str {
+    fn to_value(self) -> Value {
+        Value::sym(self)
+    }
+}
+impl ToValue for &String {
+    fn to_value(self) -> Value {
+        Value::sym(self)
+    }
+}
+
 pub trait Extract
 where
     Self: Sized,

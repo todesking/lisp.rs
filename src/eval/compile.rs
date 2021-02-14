@@ -17,10 +17,10 @@ impl TopAst {
     pub fn to_value(&self) -> Value {
         match self {
             TopAst::Define(name, ast) => {
-                list![Value::sym("__define"), Value::sym(name); ast.to_value()]
+                list!["__define", name; ast.to_value()]
             }
             TopAst::DefMacro(name, ast) => {
-                list![Value::sym("__defmacro"), Value::sym(name); ast.to_value()]
+                list!["__defmacro", name; ast.to_value()]
             }
             TopAst::Expr(ast) => ast.to_value(),
         }
@@ -102,13 +102,13 @@ impl Ast {
         match self {
             Ast::Const(v) => match v {
                 Value::Bool(..) | Value::Int(..) | Value::Str(..) | Value::Nil => v.clone(),
-                _ => list![Value::sym("quote"), v.clone()],
+                _ => list!["quote", v.clone()],
             },
             Ast::GetGlobal(name, ..)
             | Ast::GetLocal(name, ..)
             | Ast::GetArgument(name, ..)
             | Ast::GetRec(name, ..) => Value::sym(name),
-            Ast::GetMacro(v) => list![Value::sym("get-macro"), Value::sym(v)],
+            Ast::GetMacro(v) => list!["get-macro", v],
             Ast::If(cond, th, el) => list![
                 Value::sym("if"),
                 cond.to_value(),
@@ -122,7 +122,7 @@ impl Ast {
                 expr,
                 ..
             } => {
-                list![Value::sym("lambda"); lambda_to_value(param_names, rest_name, bodies, expr)]
+                list!["lambda"; lambda_to_value(param_names, rest_name, bodies, expr)]
             }
             Ast::Apply(f, xs) => {
                 let xs = Value::list(xs.iter().map(|x| x.to_value()).collect::<Vec<_>>().iter());
@@ -135,7 +135,7 @@ impl Ast {
                 Value::sym(name),
                 value.to_value()
             ],
-            Ast::EnsureSafe(value) => list![Value::sym("ensure-safe"), value.to_value()],
+            Ast::EnsureSafe(value) => list!["ensure-safe", value.to_value()],
             Ast::CatchError { handler, expr } => list![
                 Value::sym("catch-error"),
                 handler.to_value(),
@@ -143,7 +143,7 @@ impl Ast {
             ],
             Ast::Error(err) => {
                 let (err, payload) = err.to_tuple();
-                list![Value::sym("error"), Value::sym(err), payload]
+                list!["error", err, payload]
             }
             Ast::LetRec {
                 defs, body, expr, ..
@@ -159,11 +159,11 @@ impl Ast {
                     .map(|x| x.to_value())
                     .rev()
                     .fold(expr.to_value(), |a, x| Value::cons(x, a));
-                list![Value::sym("letrec"), Value::list(defs.iter()); body]
+                list!["letrec", Value::list(defs.iter()); body]
             }
-            Ast::QuasiQuote(qq) => list![Value::sym("quasiquote"), qq.to_value()],
+            Ast::QuasiQuote(qq) => list!["quasiquote", qq.to_value()],
             Ast::IfMatch(_, expr, pat, th, el) => list![
-                Value::sym("if-match"),
+                "if-match",
                 expr.to_value(),
                 list![pat.to_value(), th.to_value()],
                 el.to_value()
@@ -232,9 +232,9 @@ impl QuasiQuote {
         match self {
             QuasiQuote::Const(v) => v.clone(),
             QuasiQuote::Cons(car, cdr) => Value::cons(car.to_value(), cdr.to_value()),
-            QuasiQuote::Expr(ast) => list![Value::sym("unquote"), ast.to_value()],
+            QuasiQuote::Expr(ast) => list!["unquote", ast.to_value()],
             QuasiQuote::Append(expr, list) => {
-                list![list![Value::sym("unquote-splicing"), expr.to_value()]; list.to_value()]
+                list![list!["unquote-splicing", expr.to_value()]; list.to_value()]
             }
         }
     }
