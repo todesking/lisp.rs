@@ -42,6 +42,19 @@
     ,@(map
       (lambda (def) `(define . ,(extract-define-args def))) defs)))
 
+(defmacro (and . args)
+  (if-match args
+    ((a1 . rest) `(if ,a1 (and ,@rest) #f))
+    (if (nil? args) #t
+      (error 'and 'illegal-argument args))))
+
+(defmacro (or . args)
+  (if-match args
+    ((a1 . rest) `(if ,a1 #t (or ,@rest)))
+    (if (nil? args) #f
+      (error 'or 'illegal-argument args))))
+
+(define (not v) (if v #f #t))
 
 (define true #t)
 (define false #f)

@@ -39,3 +39,19 @@
 (assert-eq (even? 123) #f)
 (assert-eq (odd? 123) #t)
 
+(assert-eq (and #t #t #t #t) #t)
+(assert-eq (and #t #t #f #t) #f)
+(assert-eq (and) #t)
+(define x 1)
+(assert-eq (and #f (set-global! x 999)) #f)
+(assert-eq x 1)
+
+(assert-eq (or #f #t #f) #t)
+(assert-eq (or #f #f #f) #f)
+(assert-eq (or) #f)
+(define x 1)
+(assert-eq (or #t (set-global! x 999)) #t)
+(assert-eq x 1)
+
+(assert-eq (not #t) #f)
+(assert-eq (not #f) #t)
