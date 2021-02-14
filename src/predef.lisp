@@ -35,6 +35,14 @@
      (map (lambda (l) (car (cdr l))) defs)))
    (map extract-define-args defs)))
 
+(defmacro (define-rec . defs)
+  `(begin
+    ,@(map
+      (lambda (def) `(define ,(car (extract-define-args def)) ())) defs)
+    ,@(map
+      (lambda (def) `(define . ,(extract-define-args def))) defs)))
+
+
 (define true #t)
 (define false #f)
 

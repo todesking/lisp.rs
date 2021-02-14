@@ -3,6 +3,7 @@ use crate::eval::GlobalEnv;
 use crate::value::LambdaDef;
 use crate::value::RefValue;
 use crate::value::Value;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,13 +19,14 @@ impl TopAst {
     pub fn to_value(&self) -> Value {
         match self {
             TopAst::Begin(asts, last) => {
-                list!["begin"; Value::list_with_last(asts.iter().map(|x| x.to_value()).collect::<Vec<_>>().iter(), list![last.to_value()])]
+                let asts = asts.iter().map(|x| x.to_value()).collect::<Vec<_>>();
+                list!["begin"; Value::list_with_last(asts.iter(), list![last.to_value()])]
             }
             TopAst::Define(name, ast) => {
-                list!["__define", name; ast.to_value()]
+                list!["__define", name, ast.to_value()]
             }
             TopAst::DefMacro(name, ast) => {
-                list!["__defmacro", name; ast.to_value()]
+                list!["__defmacro", name, ast.to_value()]
             }
             TopAst::Expr(ast) => ast.to_value(),
         }
@@ -255,8 +257,8 @@ pub enum VarRef {
 #[derive(Clone)]
 struct StaticEnv<'a> {
     global: &'a GlobalEnv,
-    current_global: Option<(String, usize)>,
-    locals: std::collections::HashMap<String, VarRef>,
+    new_globals: HashMap<String, usize>,
+    locals: HashMap<String, VarRef>,
     local_depth: usize,
     args: Vec<String>,
     rec_depth: usize,
@@ -265,41 +267,37 @@ impl<'a> StaticEnv<'a> {
     fn new(global: &GlobalEnv) -> StaticEnv {
         StaticEnv {
             global,
-            current_global: None,
+            new_globals: Default::default(),
             locals: Default::default(),
             local_depth: 0,
             args: Default::default(),
             rec_depth: 0,
         }
     }
-    fn new_with_current<'b>(global: &'a GlobalEnv, name: &'b str) -> StaticEnv<'a> {
-        StaticEnv {
-            global,
-            current_global: Some((name.to_owned(), global.next_id())),
-            locals: Default::default(),
-            local_depth: 0,
-            args: Default::default(),
-            rec_depth: 0,
+    fn new_global(&mut self, name: &str) {
+        if self.lookup_global_id(name).is_some() {
+            return;
         }
+        let next_id = self.global.next_id() + self.new_globals.len();
+        self.new_globals.insert(name.to_owned(), next_id);
     }
     fn lookup(&self, name: &str) -> Option<VarRef> {
         if let Some(var_ref) = self.locals.get(name) {
             Some(var_ref.clone())
         } else {
-            self.current_global
-                .as_ref()
-                .filter(|(gname, _)| gname == name)
-                .map(|(_, id)| VarRef::Global(*id))
-                .or_else(|| self.global.lookup_global_id(name).map(VarRef::Global))
+            self.lookup_global_id(name).map(VarRef::Global)
         }
     }
     fn lookup_global_id(&self, name: &str) -> Option<usize> {
-        self.global.lookup_global_id(name)
+        self.new_globals
+            .get(name)
+            .cloned()
+            .or_else(|| self.global.lookup_global_id(name))
     }
     fn extended(&self, names: &[Rc<str>], rest_name: &Option<Rc<str>>) -> StaticEnv<'a> {
         let mut env = StaticEnv {
             global: self.global,
-            current_global: self.current_global.clone(),
+            new_globals: self.new_globals.clone(),
             locals: self.locals.clone(),
             local_depth: self.local_depth + 1,
             args: Default::default(),
@@ -351,7 +349,11 @@ fn extract_macro_call(expr: &Value, global: &GlobalEnv) -> Option<(Value, Value)
 }
 
 pub fn build_top_ast(expr: &Value, global: &GlobalEnv) -> Result<TopAst, EvalError> {
-    let expr = match expand_macro(expr, global) {
+    let mut env = StaticEnv::new(global);
+    build_top_ast_impl(expr, &mut env)
+}
+fn build_top_ast_impl(expr: &Value, env: &mut StaticEnv) -> Result<TopAst, EvalError> {
+    let expr = match expand_macro(expr, &env.global) {
         Ok(expr) => expr,
         Err(err) => return Ok(TopAst::Expr(Ast::Error(err))),
     };
@@ -363,7 +365,7 @@ pub fn build_top_ast(expr: &Value, global: &GlobalEnv) -> Result<TopAst, EvalErr
                     .ok_or_else(|| EvalError::IllegalArgument(cdr.clone()))?;
                 let mut values = values
                     .iter()
-                    .map(|v| build_top_ast(v, global))
+                    .map(|v| build_top_ast_impl(v, env))
                     .collect::<Result<Vec<_>, _>>()?;
                 if let Some(last) = values.pop() {
                     Ok(TopAst::Begin(values, last.into()))
@@ -375,7 +377,7 @@ pub fn build_top_ast(expr: &Value, global: &GlobalEnv) -> Result<TopAst, EvalErr
                 if let Some((name, value)) = cdr.to_list2() {
                     match name {
                         Value::Sym(name) => {
-                            let env = StaticEnv::new_with_current(global, &*name);
+                            env.new_global(&*name);
                             let value = build_ast(&value, &env)?;
                             let ast = match deftype {
                                 "__define" => TopAst::Define(name.to_string(), value),
@@ -391,12 +393,12 @@ pub fn build_top_ast(expr: &Value, global: &GlobalEnv) -> Result<TopAst, EvalErr
                 }
             }
             _ => {
-                let ast = build_ast(&expr, &StaticEnv::new(global))?;
+                let ast = build_ast(&expr, env)?;
                 Ok(TopAst::Expr(ast))
             }
         }
     } else {
-        let ast = build_ast(&expr, &StaticEnv::new(global))?;
+        let ast = build_ast(&expr, env)?;
         Ok(TopAst::Expr(ast))
     }
 }

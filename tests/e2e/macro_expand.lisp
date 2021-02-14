@@ -11,3 +11,6 @@
 (assert-eq
   (macro-expand '(if-match 0 (('a b _ b) 123) 456))
   '(if-match 0 (('a b _ b) (lambda (b) 123)) 456))
+(assert-eq
+  (macro-expand '(define x 1))
+  '(__define x 1))

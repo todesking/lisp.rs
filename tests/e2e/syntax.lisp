@@ -28,5 +28,14 @@
 
 (begin
   (define x 1)
-  (define y 2))
-(assert-eq `(,x ,y) '(1 2))
+  (begin
+    (define y 2)
+    (define z 3)))
+(assert-eq `(,x ,y ,z) '(1 2 3))
+
+(define-rec
+  ((even? n) (if (eq? n 0) #t (odd? (- n 1))))
+  ((odd? n)  (if (eq? n 0) #f (even? (- n 1)))))
+(assert-eq (even? 123) #f)
+(assert-eq (odd? 123) #t)
+
