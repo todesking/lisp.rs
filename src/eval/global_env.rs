@@ -119,6 +119,13 @@ impl GlobalEnv {
             }
         })
     }
+    pub fn set_global_fun<F>(&mut self, name: &str, f: F)
+    where
+        F: Fn(&[Value], &GlobalEnv) -> Result<Value, EvalError> + 'static,
+    {
+        let value = Value::global_fun(name, f);
+        self.set(name.to_owned(), value);
+    }
     pub fn ls(&self) -> impl Iterator<Item = &str> {
         self.ids.keys().map(|s| s.as_ref())
     }

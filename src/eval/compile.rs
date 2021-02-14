@@ -11,6 +11,21 @@ pub enum TopAst {
     DefMacro(String, Ast),
     Expr(Ast),
 }
+impl TopAst {
+    // Note: this is for debugging purporse only.
+    // Consistency(i.e. ast == build_top_ast(ast.to_value())) not guaranteed.
+    pub fn to_value(&self) -> Value {
+        match self {
+            TopAst::Define(name, ast) => {
+                list![Value::sym("__define"), Value::sym(name); ast.to_value()]
+            }
+            TopAst::DefMacro(name, ast) => {
+                list![Value::sym("__defmacro"), Value::sym(name); ast.to_value()]
+            }
+            TopAst::Expr(ast) => ast.to_value(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ast {
@@ -61,12 +76,108 @@ pub enum Ast {
     GetMacro(String),
 }
 
+fn lambda_to_value(
+    param_names: &[Rc<str>],
+    rest_name: &Option<Rc<str>>,
+    bodies: &[Ast],
+    expr: &Ast,
+) -> Value {
+    let rest_name = rest_name
+        .clone()
+        .map(|n| Value::sym(&*n))
+        .unwrap_or(Value::Nil);
+    let params = param_names
+        .iter()
+        .map(|n| Value::sym(n))
+        .rev()
+        .fold(rest_name, |a, x| Value::cons(x, a));
+    let body = bodies
+        .iter()
+        .rev()
+        .fold(list![expr.to_value()], |a, x| Value::cons(x.to_value(), a));
+    list![params; body]
+}
+impl Ast {
+    fn to_value(&self) -> Value {
+        match self {
+            Ast::Const(v) => match v {
+                Value::Bool(..) | Value::Int(..) | Value::Str(..) | Value::Nil => v.clone(),
+                _ => list![Value::sym("quote"), v.clone()],
+            },
+            Ast::GetGlobal(name, ..)
+            | Ast::GetLocal(name, ..)
+            | Ast::GetArgument(name, ..)
+            | Ast::GetRec(name, ..) => Value::sym(name),
+            Ast::GetMacro(v) => list![Value::sym("get-macro"), Value::sym(v)],
+            Ast::If(cond, th, el) => list![
+                Value::sym("if"),
+                cond.to_value(),
+                th.to_value(),
+                el.to_value()
+            ],
+            Ast::Lambda {
+                param_names,
+                rest_name,
+                bodies,
+                expr,
+                ..
+            } => {
+                list![Value::sym("lambda"); lambda_to_value(param_names, rest_name, bodies, expr)]
+            }
+            Ast::Apply(f, xs) => {
+                let xs = Value::list(xs.iter().map(|x| x.to_value()).collect::<Vec<_>>().iter());
+                list![f.to_value(); xs]
+            }
+            Ast::SetLocal { name, value, .. }
+            | Ast::SetArg { name, value, .. }
+            | Ast::SetGlobal { name, value, .. } => list![
+                Value::sym("unsafe-set-local!"),
+                Value::sym(name),
+                value.to_value()
+            ],
+            Ast::EnsureSafe(value) => list![Value::sym("ensure-safe"), value.to_value()],
+            Ast::CatchError { handler, expr } => list![
+                Value::sym("catch-error"),
+                handler.to_value(),
+                expr.to_value()
+            ],
+            Ast::Error(err) => {
+                let (err, payload) = err.to_tuple();
+                list![Value::sym("error"), Value::sym(err), payload]
+            }
+            Ast::LetRec {
+                defs, body, expr, ..
+            } => {
+                let defs = defs
+                    .iter()
+                    .map(|def| {
+                        lambda_to_value(&def.param_names, &def.rest_name, &def.bodies, &def.expr)
+                    })
+                    .collect::<Vec<_>>();
+                let body = body
+                    .iter()
+                    .map(|x| x.to_value())
+                    .rev()
+                    .fold(expr.to_value(), |a, x| Value::cons(x, a));
+                list![Value::sym("letrec"), Value::list(defs.iter()); body]
+            }
+            Ast::QuasiQuote(qq) => list![Value::sym("quasiquote"), qq.to_value()],
+            Ast::IfMatch(_, expr, pat, th, el) => list![
+                Value::sym("if-match"),
+                expr.to_value(),
+                list![pat.to_value(), th.to_value()],
+                el.to_value()
+            ],
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MatchPattern {
     Const(Value),
-    Capture(usize),
+    Capture(String, usize),
     Cons(Box<MatchPattern>, Box<MatchPattern>),
-    SameAs(usize),
+    SameAs(String, usize),
     Any,
 }
 impl MatchPattern {
@@ -74,12 +185,12 @@ impl MatchPattern {
         match self {
             MatchPattern::Any => true,
             MatchPattern::Const(v) => v == value,
-            MatchPattern::Capture(index) => {
+            MatchPattern::Capture(_, index) => {
                 assert!(out.len() == *index);
                 out.push(value.clone());
                 true
             }
-            MatchPattern::SameAs(index) => &out[*index] == value,
+            MatchPattern::SameAs(_, index) => &out[*index] == value,
             MatchPattern::Cons(pcar, pcdr) => {
                 if let Some((vcar, vcdr)) = value.to_cons() {
                     pcar.match_and_bind(&vcar, out) && pcdr.match_and_bind(&vcdr, out)
@@ -89,6 +200,15 @@ impl MatchPattern {
             }
         }
     }
+    fn to_value(&self) -> Value {
+        match self {
+            MatchPattern::Any => Value::sym("_"),
+            MatchPattern::Const(v) => Ast::Const(v.clone()).to_value(),
+            MatchPattern::Capture(name, _) => Value::sym(name),
+            MatchPattern::SameAs(name, _) => Value::sym(name),
+            MatchPattern::Cons(car, cdr) => list![car.to_value(); cdr.to_value()],
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -96,17 +216,27 @@ pub enum QuasiQuote {
     Const(Value),
     Cons(Box<QuasiQuote>, Box<QuasiQuote>),
     Expr(Box<Ast>),
-    Append(Box<QuasiQuote>, Box<QuasiQuote>),
+    Append(Box<Ast>, Box<QuasiQuote>),
 }
 impl QuasiQuote {
     fn cons(car: QuasiQuote, cdr: QuasiQuote) -> QuasiQuote {
         QuasiQuote::Cons(car.into(), cdr.into())
     }
-    fn append(l1: QuasiQuote, l2: QuasiQuote) -> QuasiQuote {
-        QuasiQuote::Append(l1.into(), l2.into())
+    fn append(expr: Ast, l: QuasiQuote) -> QuasiQuote {
+        QuasiQuote::Append(expr.into(), l.into())
     }
     fn expr(ast: Ast) -> QuasiQuote {
         QuasiQuote::Expr(ast.into())
+    }
+    fn to_value(&self) -> Value {
+        match self {
+            QuasiQuote::Const(v) => v.clone(),
+            QuasiQuote::Cons(car, cdr) => Value::cons(car.to_value(), cdr.to_value()),
+            QuasiQuote::Expr(ast) => list![Value::sym("unquote"), ast.to_value()],
+            QuasiQuote::Append(expr, list) => {
+                list![list![Value::sym("unquote-splicing"), expr.to_value()]; list.to_value()]
+            }
+        }
     }
 }
 
@@ -274,9 +404,10 @@ fn build_ast(expr: &Value, env: &StaticEnv) -> Result<Ast, EvalError> {
         }
         Value::Ref(r) => match &**r {
             RefValue::Cons(car, cdr) => build_ast_from_cons(&car.borrow(), &cdr.borrow(), env),
-            RefValue::RecLambda { .. } | RefValue::Lambda { .. } | RefValue::Fun { .. } => {
-                Ok(Ast::Const(expr.clone()))
-            }
+            RefValue::RecLambda { .. }
+            | RefValue::Lambda { .. }
+            | RefValue::Fun { .. }
+            | RefValue::GlobalFun { .. } => Ok(Ast::Const(expr.clone())),
         },
     }
 }
@@ -428,11 +559,11 @@ fn build_pattern(pat: &Value, env: &mut Vec<String>) -> Result<MatchPattern, Eva
             if name == "_" {
                 Ok(MatchPattern::Any)
             } else if let Some(index) = env.iter().position(|n| n == name) {
-                Ok(MatchPattern::SameAs(index))
+                Ok(MatchPattern::SameAs(name.to_owned(), index))
             } else {
                 let index = env.len();
                 env.push(name.to_owned());
-                Ok(MatchPattern::Capture(index))
+                Ok(MatchPattern::Capture(name.to_owned(), index))
             }
         }
         Value::Int(..) | Value::Bool(..) | Value::Nil | Value::Str(..) => {
@@ -482,7 +613,6 @@ fn build_quasiquote(
             Value::Sym(name) if &*name == "unquote-splicing" => {
                 let arg = cdar.to_list1().ok_or(EvalError::QuasiQuote)?;
                 let arg = build_ast(&arg, env)?;
-                let arg = QuasiQuote::Expr(Box::new(arg));
                 let cdr = cdr.ok_or(EvalError::QuasiQuote)?;
                 let cdr = build_quasiquote(cdr, None, env)?;
                 Ok(QuasiQuote::append(arg, cdr))

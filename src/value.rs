@@ -1,6 +1,7 @@
 use crate::eval::Ast;
 use crate::eval::EvalError;
 use crate::eval::EvalResult;
+use crate::eval::GlobalEnv;
 use crate::eval::LocalEnv;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -40,6 +41,10 @@ pub enum RefValue {
         name: String,
         fun: Fun,
     },
+    GlobalFun {
+        name: String,
+        fun: GlobalFun,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,6 +70,23 @@ impl Eq for Fun {}
 impl std::fmt::Debug for Fun {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         fmt.write_str("<primitive function>")
+    }
+}
+
+#[derive(Clone)]
+#[allow(clippy::type_complexity)]
+pub struct GlobalFun(pub Rc<dyn for<'a> Fn(&'a [Value], &GlobalEnv) -> EvalResult>);
+impl PartialEq for GlobalFun {
+    fn eq(&self, rhs: &Self) -> bool {
+        let pl = self.0.as_ref() as *const _ as *const ();
+        let pr = rhs.0.as_ref() as *const _ as *const ();
+        pl == pr
+    }
+}
+impl Eq for GlobalFun {}
+impl std::fmt::Debug for GlobalFun {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        fmt.write_str("<primitive global function>")
     }
 }
 
@@ -98,6 +120,15 @@ impl Value {
         Value::Ref(Rc::new(RefValue::Fun {
             name: name.to_string(),
             fun: Fun(Rc::new(f)),
+        }))
+    }
+    pub fn global_fun<F>(name: &str, f: F) -> Value
+    where
+        F: for<'a, 'g> Fn(&'a [Value], &'g GlobalEnv) -> EvalResult + 'static,
+    {
+        Value::Ref(Rc::new(RefValue::GlobalFun {
+            name: name.to_string(),
+            fun: GlobalFun(Rc::new(f)),
         }))
     }
     pub fn ref_value(v: RefValue) -> Value {
@@ -453,6 +484,11 @@ impl std::fmt::Display for RefValue {
             }
             RefValue::Fun { name, .. } => {
                 fmt.write_str("#<primitive:")?;
+                fmt.write_str(name)?;
+                fmt.write_str(">")
+            }
+            RefValue::GlobalFun { name, .. } => {
+                fmt.write_str("#<primitive(global):")?;
                 fmt.write_str(name)?;
                 fmt.write_str(">")
             }

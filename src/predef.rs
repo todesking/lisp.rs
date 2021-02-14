@@ -1,3 +1,4 @@
+use crate::eval;
 use crate::eval::EvalError;
 use crate::eval::GlobalEnv;
 use crate::value::Extract;
@@ -40,6 +41,14 @@ pub fn load(global: &mut GlobalEnv) {
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Value::Str(Rc::from(args.join(""))))
+    });
+
+    global.set_global_fun("macro-expand", |args, global| {
+        if args.len() != 1 {
+            Err(EvalError::illegal_argument(args))
+        } else {
+            eval::build_top_ast(&args[0], global).map(|ast| ast.to_value())
+        }
     });
 
     load_arithmetic(global);

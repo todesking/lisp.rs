@@ -36,4 +36,5 @@ mod test {
     testcase!(variable_lookup);
     testcase!(gensym);
     testcase!(syntax);
+    testcase!(macro_expand);
 }

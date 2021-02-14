@@ -231,9 +231,9 @@ fn eval_quasiquote<'g>(
             let cdr = eval_quasiquote(cdr, global, local, args)?;
             Ok(Value::cons(car, cdr))
         }
-        QuasiQuote::Append(l1, l2) => {
-            let l1 = eval_quasiquote(l1, global, local, args)?;
-            let l2 = eval_quasiquote(l2, global, local, args)?;
+        QuasiQuote::Append(expr, list) => {
+            let l1 = eval_local_loop(expr, global, local, args)?;
+            let l2 = eval_quasiquote(list, global, local, args)?;
             append_list(l1, l2).ok_or(EvalError::QuasiQuote)
         }
     }
@@ -296,6 +296,7 @@ fn eval_apply<'g>(
                 eval_local(&lambda_def.expr, global, &env, &args)
             }
             RefValue::Fun { fun, .. } => fun.0(&args).map(Cont::Ret),
+            RefValue::GlobalFun { fun, .. } => fun.0(&args, global.as_ref()).map(Cont::Ret),
             RefValue::Cons(..) => Err(EvalError::CantApply(f.clone(), args.into_boxed_slice())),
         },
         _ => Err(EvalError::CantApply(f.clone(), args.into_boxed_slice())),
