@@ -32,3 +32,9 @@
          ((prefix) prefix)
          (error 'gensym 'illegal-argument)))))) 0))
 
+(defmacro let
+  (lambda (defs body . rest)
+    ((lambda (def-names def-exprs)
+      `((lambda (,@def-names) ,body ,@rest) ,@def-exprs))
+     (map car defs)
+     (map (lambda (l) (car (cdr l))) defs))))

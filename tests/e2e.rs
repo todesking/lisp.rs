@@ -35,4 +35,5 @@ mod test {
     testcase!(quasiquote);
     testcase!(variable_lookup);
     testcase!(gensym);
+    testcase!(syntax);
 }
