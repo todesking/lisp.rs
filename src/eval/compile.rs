@@ -314,8 +314,14 @@ impl<'a> StaticEnv<'a> {
         env
     }
     fn rec_extended<'b>(&self, names: impl Iterator<Item = &'b str>) -> StaticEnv<'a> {
-        let mut env = self.clone();
-        env.rec_depth += 1;
+        let mut env = StaticEnv {
+            global: self.global,
+            new_globals: self.new_globals.clone(),
+            locals: self.locals.clone(),
+            local_depth: self.local_depth,
+            args: Default::default(),
+            rec_depth: self.rec_depth + 1,
+        };
         for (i, name) in names.enumerate() {
             env.locals
                 .insert(name.to_string(), VarRef::Rec(env.rec_depth, i));
@@ -491,7 +497,7 @@ fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast,
             let err = || EvalError::IllegalArgument(cdr.clone());
             let (defs, body) = cdr.to_cons().ok_or_else(err)?;
             let defs = defs.to_vec().ok_or_else(err)?;
-            let (env, defs) = extract_lambda_defs(&defs, env, err)?;
+            let (env, defs) = extract_rec_lambda_defs(&defs, env, err)?;
             let body = body.to_vec().ok_or_else(err)?;
             let mut body = body
                 .iter()
@@ -663,7 +669,7 @@ fn build_quasiquote(
 }
 
 #[allow(clippy::type_complexity)]
-fn extract_lambda_defs<'a, 'b, E: Fn() -> EvalError + Copy>(
+fn extract_rec_lambda_defs<'a, 'b, E: Fn() -> EvalError + Copy>(
     raw: impl IntoIterator<Item = &'a Value>,
     env: &'b StaticEnv,
     err: E,

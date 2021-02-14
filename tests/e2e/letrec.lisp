@@ -26,3 +26,12 @@
 (assert-eq
  (((f 1) 2) 3)
  4)
+
+(assert-eq
+ (let ((x 1))
+  (letrec
+   (((f y)
+     (if-match 1
+      (1 (+ x y)) #f)))
+   (f 123)))
+ 124)
