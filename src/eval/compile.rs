@@ -73,6 +73,7 @@ pub enum Ast {
     GetRec(String, usize, usize),
     LetRec {
         rec_depth: usize,
+        local_depth: usize,
         defs: Vec<LambdaDef>,
         body: Vec<Ast>,
         expr: Box<Ast>,
@@ -318,10 +319,14 @@ impl<'a> StaticEnv<'a> {
             global: self.global,
             new_globals: self.new_globals.clone(),
             locals: self.locals.clone(),
-            local_depth: self.local_depth,
+            local_depth: self.local_depth + 1,
             args: Default::default(),
             rec_depth: self.rec_depth + 1,
         };
+        for (i, name) in self.args.iter().enumerate() {
+            env.locals
+                .insert(name.to_string(), VarRef::Local(env.local_depth, i));
+        }
         for (i, name) in names.enumerate() {
             env.locals
                 .insert(name.to_string(), VarRef::Rec(env.rec_depth, i));
@@ -507,11 +512,13 @@ fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast,
             let expr = Box::new(expr);
             let defs = defs.into_iter().map(|d| d.1).collect();
             let rec_depth = env.rec_depth;
+            let local_depth = env.local_depth;
             Ok(Ast::LetRec {
                 defs,
                 body,
                 expr,
                 rec_depth,
+                local_depth,
             })
         }
         Value::Sym(name) if &**name == "quasiquote" => {
@@ -530,17 +537,17 @@ fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast,
                 .to_list2()
                 .ok_or_else(|| EvalError::IllegalArgument(th.clone()))?;
             let expr = build_ast(&expr, env)?;
-            let mut pat_env = Vec::new();
-            let pat = build_pattern(&pat, &mut pat_env)?;
-            let pat_env = pat_env
+            let mut capture_names = Vec::new();
+            let pat = build_pattern(&pat, &mut capture_names)?;
+            let capture_names = capture_names
                 .iter()
                 .map(|n| Rc::from(n.clone()))
                 .collect::<Vec<_>>();
-            let capture_size = pat_env.len();
-            let th_env = env.extended(&pat_env, &None);
+            let capture_size = capture_names.len();
+            let th_env = env.extended(&capture_names, &None);
             let th = build_ast(&th, &th_env)?;
             let th = Ast::Lambda {
-                param_names: pat_env,
+                param_names: capture_names,
                 rest_name: None,
                 bodies: Rc::from(vec![]),
                 expr: Rc::new(th),

@@ -14,6 +14,8 @@ pub enum LocalEnv {
     Rec {
         rec_depth: usize,
         rec_values: Vec<RecValue>,
+        local_depth: usize,
+        local_values: Rc<RefCell<Vec<Value>>>,
         parent: Option<Rc<LocalEnv>>,
     },
 }
@@ -59,6 +61,12 @@ impl LocalEnv {
                     values,
                     depth,
                     parent,
+                }
+                | LocalEnv::Rec {
+                    local_depth: depth,
+                    local_values: values,
+                    parent,
+                    ..
                 } => {
                     if *depth == target_depth {
                         values.borrow()[index].clone()
@@ -66,7 +74,6 @@ impl LocalEnv {
                         Self::get(parent, target_depth, index)
                     }
                 }
-                LocalEnv::Rec { parent, .. } => Self::get(parent, depth, index),
             }
         } else {
             panic!(format!(
@@ -107,6 +114,7 @@ impl LocalEnv {
                     rec_depth,
                     rec_values,
                     parent,
+                    ..
                 } => {
                     if *rec_depth == target_depth {
                         let rec_value = &rec_values[index];
@@ -134,11 +142,15 @@ impl LocalEnv {
     pub fn rec_extended(
         parent: Option<Rc<LocalEnv>>,
         rec_depth: usize,
+        local_depth: usize,
         defs: &[LambdaDef],
+        local_values: Rc<RefCell<Vec<Value>>>,
     ) -> Rc<LocalEnv> {
         let env = LocalEnv::Rec {
             rec_depth,
+            local_depth,
             rec_values: Vec::with_capacity(defs.len()),
+            local_values,
             parent,
         };
         let env = Rc::new(env);

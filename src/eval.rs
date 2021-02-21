@@ -193,11 +193,18 @@ fn eval_local<'g>(
         Ast::GetRec(_, depth, index) => Cont::ok_ret(LocalEnv::get_rec(local, *depth, *index)),
         Ast::LetRec {
             rec_depth,
+            local_depth,
             defs,
             body,
             expr,
         } => {
-            let local = Some(LocalEnv::rec_extended(local.clone(), *rec_depth, defs));
+            let local = Some(LocalEnv::rec_extended(
+                local.clone(),
+                *rec_depth,
+                *local_depth,
+                defs,
+                args.clone(),
+            ));
             for b in body {
                 eval_local_loop(b, global, &local, args)?;
             }

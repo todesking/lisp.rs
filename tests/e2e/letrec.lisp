@@ -31,7 +31,6 @@
  (let ((x 1))
   (letrec
    (((f y)
-     (if-match 1
-      (1 (+ x y)) #f)))
+     ((lambda () (+ x y)))))
    (f 123)))
  124)
