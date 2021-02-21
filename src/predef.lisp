@@ -42,6 +42,29 @@
     ,@(map
       (lambda (def) `(define . ,(extract-define-args def))) defs)))
 
+(define gensym
+  ((lambda (next-id)
+    (lambda args
+      ((lambda (prefix)
+         ((lambda (sym) (set-local! next-id (+ 1 next-id)) sym)
+          (make-symbol (str-+ "<gensym-" (to-string prefix) (to-string next-id)">"))))
+       (if-match args
+        (() "")
+        (if-match args
+         ((prefix) prefix)
+         (error 'gensym 'illegal-argument)))))) 0))
+
+(defmacro (match expr . args)
+  (let
+    ((the-expr (gensym)))
+    (letrec
+     (((match-impl args)
+       (if-match args
+         (((pat expr) . rest) `(if-match ,the-expr (,pat ,expr) ,(match-impl rest)))
+         (if (nil? args) `(error 'match-error ,the-expr)
+           (error 'match 'illegal-argument args)))))
+     `(let ((,the-expr ,expr)) ,(match-impl args)))))
+    
 (defmacro (and . args)
   (if-match args
     ((a1 . rest) `(if ,a1 (and ,@rest) #f))
@@ -72,15 +95,3 @@
         (lambda (err x) (cons err x))
         (f))
       err)))
-
-(define gensym
-  ((lambda (next-id)
-    (lambda args
-      ((lambda (prefix)
-         ((lambda (sym) (set-local! next-id (+ 1 next-id)) sym)
-          (make-symbol (str-+ "<gensym-" (to-string prefix) (to-string next-id)">"))))
-       (if-match args
-        (() "")
-        (if-match args
-         ((prefix) prefix)
-         (error 'gensym 'illegal-argument)))))) 0))

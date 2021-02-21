@@ -55,3 +55,13 @@
 
 (assert-eq (not #t) #f)
 (assert-eq (not #f) #t)
+
+(define x 0)
+(define (inc!) (set-global! x (+ x 1)) x)
+(assert-eq
+  (match (inc!)
+    (99 'a)
+    (2 'b)
+    (1 'c))
+  'c)
+(assert-eq x 1)

@@ -34,3 +34,12 @@
      ((lambda () (+ x y)))))
    (f 123)))
  124)
+
+(assert-eq
+ (let ((x 1))
+  (letrec
+   (((f y)
+     (if-match 2
+      (z (+ x y z)) #f)))
+   (f 123)))
+ 126)

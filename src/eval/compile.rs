@@ -340,14 +340,16 @@ fn illegal_argument_error<T>(value: Value) -> Result<T, EvalError> {
 }
 
 fn expand_macro(expr: &Value, global: &GlobalEnv) -> Result<Value, EvalError> {
-    match extract_macro_call(expr, global) {
-        None => Ok(expr.clone()),
-        Some((macro_body, macro_args)) => {
-            let macro_args = macro_args.to_vec().ok_or_else(|| {
-                EvalError::Macro(Box::new(EvalError::IllegalArgument(macro_args)))
-            })?;
-            let expr = crate::eval::eval_macro(&macro_body, macro_args, global)?;
-            Ok(expr)
+    let mut expr = expr.clone();
+    loop {
+        match extract_macro_call(&expr, global) {
+            None => return Ok(expr),
+            Some((macro_body, macro_args)) => {
+                let macro_args = macro_args.to_vec().ok_or_else(|| {
+                    EvalError::Macro(Box::new(EvalError::IllegalArgument(macro_args)))
+                })?;
+                expr = crate::eval::eval_macro(&macro_body, macro_args, global)?;
+            }
         }
     }
 }
