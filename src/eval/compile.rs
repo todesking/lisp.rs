@@ -373,6 +373,7 @@ fn build_top_ast_impl(expr: &Value, env: &mut StaticEnv) -> Result<TopAst, EvalE
     if let Some((car, cdr)) = expr.to_cons() {
         match car.as_sym().map(|r| &**r) {
             Some("begin") => {
+                // top-level begin
                 let values = cdr
                     .to_vec()
                     .ok_or_else(|| EvalError::IllegalArgument(cdr.clone()))?;
@@ -488,6 +489,10 @@ fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast,
             }
             _ => Err(EvalError::IllegalArgument(cdr.clone())),
         },
+        Value::Sym(name) if &**name == "begin" => {
+            // expr-level begin
+            build_ast(&list![list!["lambda", list![]; cdr.clone()]], env)
+        }
         Value::Sym(name) if &**name == "set-local!" => build_ast_set_local(cdr, true, env),
         Value::Sym(name) if &**name == "unsafe-set-local!" => build_ast_set_local(cdr, false, env),
         Value::Sym(name) if &**name == "set-global!" => build_ast_set_global(cdr, env),

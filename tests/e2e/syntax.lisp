@@ -26,6 +26,7 @@
 (defmacro (my-twice expr) `(+ ,expr ,expr))
 (assert-eq (my-twice 123) 246)
 
+; top-level begin
 (begin
   (define x 1)
   (begin
@@ -33,12 +34,22 @@
     (define z 3)))
 (assert-eq `(,x ,y ,z) '(1 2 3))
 
+; expr-level begin
+(define x 0)
+(assert-eq
+  (begin
+    (set-global! x 1)
+    x)
+  1)
+
+; define-rec
 (define-rec
   ((even? n) (if (eq? n 0) #t (odd? (- n 1))))
   ((odd? n)  (if (eq? n 0) #f (even? (- n 1)))))
 (assert-eq (even? 123) #f)
 (assert-eq (odd? 123) #t)
 
+; and
 (assert-eq (and #t #t #t #t) #t)
 (assert-eq (and #t #t #f #t) #f)
 (assert-eq (and) #t)
@@ -46,6 +57,7 @@
 (assert-eq (and #f (set-global! x 999)) #f)
 (assert-eq x 1)
 
+; or
 (assert-eq (or #f #t #f) #t)
 (assert-eq (or #f #f #f) #f)
 (assert-eq (or) #f)
@@ -53,9 +65,11 @@
 (assert-eq (or #t (set-global! x 999)) #t)
 (assert-eq x 1)
 
+; not
 (assert-eq (not #t) #f)
 (assert-eq (not #f) #t)
 
+; match
 (define x 0)
 (define (inc!) (set-global! x (+ x 1)) x)
 (assert-eq
