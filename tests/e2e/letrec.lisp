@@ -43,3 +43,10 @@
       (z (+ x y z)) #f)))
    (f 123)))
  126)
+
+(assert-eq
+  (letrec
+    (((f x y . rest)
+     (list x y rest)))
+    (f 1 2 3 4))
+  '(1 2 (3 4)))
