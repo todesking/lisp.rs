@@ -1,4 +1,4 @@
-use crate::compile::Ast;
+use crate::ast::Ast;
 use crate::error::EvalError;
 use crate::eval::EvalResult;
 use crate::local_env::LocalEnv;

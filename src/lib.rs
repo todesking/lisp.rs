@@ -1,5 +1,6 @@
 #[macro_use]
 mod value;
+mod ast;
 mod compile;
 mod error;
 mod eval;
@@ -8,8 +9,8 @@ mod local_env;
 mod parser;
 mod predef;
 
+pub use ast::TopAst;
 pub use compile::build_top_ast;
-pub use compile::TopAst;
 pub use error::EvalError;
 pub use eval::eval;
 pub use eval::eval_top_ast;

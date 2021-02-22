@@ -9,9 +9,9 @@ use crate::Value;
 
 use std::cell::RefCell;
 
+use crate::ast::Ast;
+use crate::ast::QuasiQuote;
 use crate::build_top_ast;
-use crate::compile::Ast;
-use crate::compile::QuasiQuote;
 use crate::EvalError;
 use crate::TopAst;
 
