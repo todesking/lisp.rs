@@ -6,8 +6,13 @@ use std::rc::Rc;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TopAst {
-    Define(String, Ast),
+    /// (module abs-name, short name, ast)
+    Define(String, String, Ast),
     DefMacro(String, Ast),
+    /// (abs parent module name, simple module name)
+    DefModule(String, String),
+    /// (simple name, abs name)
+    Import(String, String),
     Expr(Ast),
     Begin(Vec<TopAst>, Box<TopAst>),
 }
@@ -20,14 +25,73 @@ impl TopAst {
                 let asts = asts.iter().map(|x| x.to_value()).collect::<Vec<_>>();
                 list!["begin"; Value::list_with_last(asts.iter(), list![last.to_value()])]
             }
-            TopAst::Define(name, ast) => {
-                list!["__define", name, ast.to_value()]
+            TopAst::Define(module_name, name, ast) => {
+                let mut abs_name = module_name.to_string();
+                abs_name.push(':');
+                abs_name.push_str(name);
+                list!["__define", &abs_name, ast.to_value()]
             }
             TopAst::DefMacro(name, ast) => {
                 list!["__defmacro", name, ast.to_value()]
             }
+            TopAst::DefModule(mname, name) => {
+                list!["define-module", mname, name]
+            }
+            TopAst::Import(name, absname) => list!["import-name", name, absname],
             TopAst::Expr(ast) => ast.to_value(),
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ModName {
+    Root,
+    Child(Box<ModName>, String),
+}
+impl ModName {
+    pub fn make(parts: &[&str]) -> ModName {
+        ModName::Root.make_relative(parts)
+    }
+    pub fn make_relative(self, parts: &[&str]) -> ModName {
+        parts
+            .iter()
+            .fold(self, |a, x| ModName::Child(a.into(), x.to_string()))
+    }
+    pub fn global() -> ModName {
+        Self::make(&["global"])
+    }
+    pub fn abs_name(&self, name: &str) -> String {
+        let mut buf = String::new();
+        self.to_string_impl(&mut buf);
+        buf.push(':');
+        buf.push_str(name);
+        buf
+    }
+    fn to_string_impl(&self, buf: &mut String) {
+        match self {
+            ModName::Root => {}
+            ModName::Child(parent, name) => {
+                parent.to_string_impl(buf);
+                buf.push(':');
+                buf.push_str(name);
+            }
+        }
+    }
+    pub fn as_child(&self) -> Option<(&ModName, &String)> {
+        match self {
+            ModName::Root => None,
+            ModName::Child(parent, name) => Some((parent, name)),
+        }
+    }
+    pub fn child_module(&self, name: &str) -> ModName {
+        ModName::Child(self.clone().into(), name.to_string())
+    }
+}
+impl std::fmt::Display for ModName {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        let mut buf = String::new();
+        self.to_string_impl(&mut buf);
+        fmt.write_str(&buf)
     }
 }
 
@@ -78,7 +142,6 @@ pub enum Ast {
     },
     QuasiQuote(QuasiQuote),
     IfMatch(usize, Box<Ast>, MatchPattern, Box<Ast>, Box<Ast>),
-    GetMacro(String),
 }
 
 fn lambda_to_value(
@@ -113,7 +176,6 @@ impl Ast {
             | Ast::GetLocal(name, ..)
             | Ast::GetArgument(name, ..)
             | Ast::GetRec(name, ..) => Value::sym(name),
-            Ast::GetMacro(v) => list!["get-macro", v],
             Ast::If(cond, th, el) => list![
                 Value::sym("if"),
                 cond.to_value(),
@@ -245,7 +307,7 @@ impl QuasiQuote {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum VarRef {
     Global(usize),
     Local(usize, usize),

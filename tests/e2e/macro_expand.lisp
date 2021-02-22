@@ -13,4 +13,4 @@
   '(if-match 0 (('a b _ b) (lambda (b) 123)) 456))
 (assert-eq
   (macro-expand '(define x 1))
-  '(__define x 1))
+  '(__define :global:x 1))

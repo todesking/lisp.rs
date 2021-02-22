@@ -13,6 +13,7 @@ pub enum EvalError {
     ReadOnly(String),
     QuasiQuote,
     Macro(Box<EvalError>),
+    ModuleNotFound(String),
 }
 
 impl EvalError {
@@ -39,6 +40,7 @@ impl EvalError {
                 let (err, payload) = err.to_tuple();
                 ("Macro", list![Value::sym(err); payload])
             }
+            EvalError::ModuleNotFound(name) => ("ModuleNotFound", Value::sym(name)),
         }
     }
 }

@@ -14,9 +14,6 @@
    (error 'my-let1-error))))
 
 (assert-eq
-  ((get-macro my-let1) '(x 1) '(+ x 1))
-  '((lambda (x) (+ x 1)) 1))
-(assert-eq
   (my-let1 (x (+ 1 2)) (+ x x))
   6)
 (assert-error

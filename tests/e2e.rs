@@ -37,4 +37,7 @@ mod test {
     testcase!(gensym);
     testcase!(syntax);
     testcase!(macro_expand);
+    testcase!(module);
+    testcase!(module_hierarchy);
+    testcase!(module_import);
 }
