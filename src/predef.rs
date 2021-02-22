@@ -1,11 +1,12 @@
+use crate::build_top_ast;
 use crate::eval;
-use crate::eval::EvalError;
-use crate::eval::GlobalEnv;
 use crate::value::Extract;
-use crate::value::Value;
+use crate::EvalError;
+use crate::GlobalEnv;
+use crate::Value;
 use std::rc::Rc;
 
-pub fn load(global: &mut GlobalEnv) {
+pub fn load_predef(global: &mut GlobalEnv) {
     global.set_fun2("eq?", |lhs, rhs| Ok(Value::bool(lhs == rhs)));
 
     global.set_fun("error", |args| {
@@ -47,7 +48,7 @@ pub fn load(global: &mut GlobalEnv) {
         if args.len() != 1 {
             Err(EvalError::illegal_argument(args))
         } else {
-            eval::build_top_ast(&args[0], global).map(|ast| ast.to_value())
+            build_top_ast(&args[0], global).map(|ast| ast.to_value())
         }
     });
 
@@ -95,7 +96,7 @@ fn load_list_ops(global: &mut GlobalEnv) {
 fn load_from_str(s: &str, global: &mut GlobalEnv) -> Result<(), (Value, EvalError)> {
     let predef_exprs = crate::parse_all(s).expect("Parse error at predef.lisp");
     for predef_expr in predef_exprs {
-        crate::eval(&predef_expr, global).map_err(|err| (predef_expr.clone(), err))?;
+        eval(&predef_expr, global).map_err(|err| (predef_expr.clone(), err))?;
     }
     Ok(())
 }

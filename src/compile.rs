@@ -1,8 +1,8 @@
-use crate::eval::EvalError;
-use crate::eval::GlobalEnv;
 use crate::value::LambdaDef;
 use crate::value::RefValue;
-use crate::value::Value;
+use crate::EvalError;
+use crate::GlobalEnv;
+use crate::Value;
 use std::collections::HashMap;
 use std::rc::Rc;
 

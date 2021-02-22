@@ -3,8 +3,10 @@
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 
-use lisprs::eval::GlobalEnv;
-use lisprs::parser::Parser;
+use lisprs::build_top_ast;
+use lisprs::eval_top_ast;
+use lisprs::GlobalEnv;
+use lisprs::Parser;
 
 struct Ctx {
     show_raw_input: bool,
@@ -93,13 +95,13 @@ fn read_eval_print(s: &str, ctx: &mut Ctx) {
             if ctx.show_raw_input {
                 println!("[Input] {:?}", expr);
             }
-            match lisprs::eval::build_top_ast(&expr, &ctx.global) {
+            match build_top_ast(&expr, &ctx.global) {
                 Err(err) => println!("Compile error: {}", err),
                 Ok(ast) => {
                     if ctx.show_ast {
                         println!("AST: {:#?}", ast);
                     }
-                    let v = lisprs::eval::eval_top_ast(&ast, &mut ctx.global);
+                    let v = eval_top_ast(&ast, &mut ctx.global);
                     match v {
                         Ok(v) => {
                             println!("     => {}", v);

@@ -1,8 +1,8 @@
-use crate::eval::Ast;
-use crate::eval::EvalError;
+use crate::compile::Ast;
+use crate::error::EvalError;
 use crate::eval::EvalResult;
-use crate::eval::GlobalEnv;
-use crate::eval::LocalEnv;
+use crate::local_env::LocalEnv;
+use crate::GlobalEnv;
 use std::cell::RefCell;
 use std::rc::Rc;
 

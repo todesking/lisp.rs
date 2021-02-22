@@ -2,10 +2,10 @@ use criterion::Criterion;
 use criterion::{criterion_group, criterion_main};
 
 use lisprs::eval;
-use lisprs::eval::GlobalEnv;
 use lisprs::list;
 use lisprs::parse_all;
-use lisprs::value::Value;
+use lisprs::GlobalEnv;
+use lisprs::Value;
 
 fn run_bench(c: &mut Criterion, name: &str, call: &Value, global: &mut GlobalEnv) {
     c.bench_function(name, |b| {

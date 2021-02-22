@@ -1,7 +1,7 @@
 use lisprs::eval;
-use lisprs::eval::GlobalEnv;
+use lisprs::GlobalEnv;
 
-use lisprs::value::Value;
+use lisprs::Value;
 
 fn eval_str(global: &mut GlobalEnv, s: &str) -> Value {
     let expr = s.parse().unwrap();

@@ -1,5 +1,5 @@
-use crate::eval::EvalError;
-use crate::value::Value;
+use crate::EvalError;
+use crate::Value;
 
 use std::collections::HashMap;
 

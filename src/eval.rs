@@ -1,32 +1,24 @@
 use std::rc::Rc;
 
+use crate::local_env::LocalEnv;
 use crate::value::Extract;
 use crate::value::RefValue;
-use crate::value::Value;
+use crate::GlobalEnv;
+use crate::GlobalWrite;
+use crate::Value;
 
 use std::cell::RefCell;
 
-mod error;
-pub use error::EvalError;
-
-mod global_env;
-pub use global_env::GlobalEnv;
-pub use global_env::GlobalWrite;
-
-mod local_env;
-pub use local_env::LocalEnv;
-
-mod compile;
-
-pub use compile::build_top_ast;
-pub use compile::Ast;
-use compile::QuasiQuote;
-pub use compile::TopAst;
+use crate::build_top_ast;
+use crate::compile::Ast;
+use crate::compile::QuasiQuote;
+use crate::EvalError;
+use crate::TopAst;
 
 pub type EvalResult = Result<Value, EvalError>;
 
 pub fn eval<'v, 'g>(e: &Value, global: &mut impl GlobalWrite<'g>) -> EvalResult {
-    let ast = compile::build_top_ast(e, global.as_ref())?;
+    let ast = build_top_ast(e, global.as_ref())?;
     eval_top_ast(&ast, global)
 }
 

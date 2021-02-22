@@ -1,37 +1,46 @@
 #[macro_use]
-pub mod value;
-pub mod eval;
-pub mod parser;
-pub mod predef;
+mod value;
+mod compile;
+mod error;
+mod eval;
+mod global_env;
+mod local_env;
+mod parser;
+mod predef;
 
-pub fn parse(src: &str) -> Result<value::Value, parser::ParseError> {
+pub use compile::build_top_ast;
+pub use compile::TopAst;
+pub use error::EvalError;
+pub use eval::eval;
+pub use eval::eval_top_ast;
+pub use global_env::GlobalEnv;
+pub use global_env::GlobalWrite;
+pub use parser::ParseError;
+pub use parser::Parser;
+pub use predef::load_predef;
+pub use value::Value;
+
+pub fn parse(src: &str) -> Result<Value, ParseError> {
     src.parse::<value::Value>()
 }
 
-pub fn parse_all(src: &str) -> Result<Vec<value::Value>, parser::ParseError> {
-    let mut parser = parser::Parser::new();
+pub fn parse_all(src: &str) -> Result<Vec<value::Value>, ParseError> {
+    let mut parser = Parser::new();
     parser.parse_all(src)
 }
 
-pub fn predef() -> eval::GlobalEnv {
-    let mut global = eval::GlobalEnv::new();
-    predef::load(&mut global);
+pub fn predef() -> GlobalEnv {
+    let mut global = GlobalEnv::new();
+    load_predef(&mut global);
     global
 }
 
-pub fn eval(
-    expr: &value::Value,
-    global: &mut eval::GlobalEnv,
-) -> Result<value::Value, eval::EvalError> {
-    eval::eval(expr, global)
-}
-
-pub fn eval_str_or_panic(src: &str, global: &mut eval::GlobalEnv) -> value::Value {
+pub fn eval_str_or_panic(src: &str, global: &mut GlobalEnv) -> Value {
     let expr = parse(src).expect("Parse failed");
     eval(&expr, global).expect("Eval failed")
 }
 
-pub fn eval_str_all_or_panic(src: &str, global: &mut eval::GlobalEnv) {
+pub fn eval_str_all_or_panic(src: &str, global: &mut GlobalEnv) {
     let exprs = parse_all(src).expect("Parse failed");
     for e in exprs {
         eval(&e, global).expect("Eval failed");
