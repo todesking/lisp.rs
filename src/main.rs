@@ -66,7 +66,12 @@ fn do_command(line: &str, ctx: &mut Ctx) -> bool {
             let mut keys = ctx.global.ls().collect::<Vec<_>>();
             keys.sort_unstable();
             for key in keys {
-                println!("- {}", key);
+                println!("- [value] {}", key);
+            }
+            let mut keys = ctx.global.ls_macro().collect::<Vec<_>>();
+            keys.sort_unstable();
+            for key in keys {
+                println!("- [macro] {}", key);
             }
             false
         }

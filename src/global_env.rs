@@ -129,4 +129,7 @@ impl GlobalEnv {
     pub fn ls(&self) -> impl Iterator<Item = &str> {
         self.ids.keys().map(|s| s.as_ref())
     }
+    pub fn ls_macro(&self) -> impl Iterator<Item = &str> {
+        self.macros.keys().map(|s| s.as_ref())
+    }
 }
