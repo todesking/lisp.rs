@@ -2,16 +2,16 @@
 
 all: fix clippy memtest
 
-fix: check
+fix:
 	cargo fmt && cargo fix --allow-dirty --allow-staged
 
-clippy: check
+clippy:
 	find . -name '*.rs' | xargs touch && cargo clippy --all-features --all-targets
 
 check:
 	cargo check
 
-test: check
+test:
 	RUST_BACKTRACE=1 cargo test
 
 memtest:
