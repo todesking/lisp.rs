@@ -52,11 +52,15 @@ pub fn eval_top_ast<'v, 'g>(top: &'v TopAst, global: &mut impl GlobalWrite<'g>) 
                 .ok_or_else(|| EvalError::ReadOnly(name.to_owned()))?;
             Ok(Value::nil())
         }
-        TopAst::DefMacro(name, value) => {
+        TopAst::DefMacro(mname, name, value) => {
             let value = eval_local_loop(value, global, &None, &args)?;
+            let mut abs_name = mname.to_string();
+            abs_name.push(':');
+            abs_name.push_str(name);
             global
-                .set_macro(name, value)
+                .set_macro(abs_name, value)
                 .ok_or_else(|| EvalError::ReadOnly(name.to_owned()))?;
+            global.define_module_member(mname.clone(), name.clone());
             Ok(Value::nil())
         }
         TopAst::DefModule(mname, name) => global

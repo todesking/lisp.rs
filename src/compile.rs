@@ -299,7 +299,11 @@ fn build_top_ast_impl(expr: &Value, env: &mut StaticEnv) -> Result<TopAst, EvalE
                             let mname = current_module.to_string();
                             let ast = match deftype {
                                 "__define" => TopAst::Define(mname, simple_name.to_string(), value),
-                                "__defmacro" => TopAst::DefMacro(abs_name, value),
+                                "__defmacro" => TopAst::DefMacro(
+                                    current_module.to_string(),
+                                    simple_name.to_string(),
+                                    value,
+                                ),
                                 _ => unreachable!(),
                             };
                             Ok(ast)

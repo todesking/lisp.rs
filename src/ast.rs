@@ -8,7 +8,7 @@ use std::rc::Rc;
 pub enum TopAst {
     /// (module abs-name, short name, ast)
     Define(String, String, Ast),
-    DefMacro(String, Ast),
+    DefMacro(String, String, Ast),
     /// (abs parent module name, simple module name)
     DefModule(String, String),
     /// (simple name, abs name)
@@ -32,8 +32,8 @@ impl TopAst {
                 abs_name.push_str(name);
                 list!["__define", &abs_name, ast.to_value()]
             }
-            TopAst::DefMacro(name, ast) => {
-                list!["__defmacro", name, ast.to_value()]
+            TopAst::DefMacro(mname, name, ast) => {
+                list!["__defmacro", mname, name, ast.to_value()]
             }
             TopAst::DefModule(mname, name) => {
                 list!["define-module", mname, name]

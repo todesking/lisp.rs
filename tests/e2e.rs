@@ -40,4 +40,5 @@ mod test {
     testcase!(module);
     testcase!(module_hierarchy);
     testcase!(module_import);
+    testcase!(module_macro);
 }
