@@ -14,16 +14,17 @@ pub enum TopAst {
     /// (simple name, abs name)
     Import(String, String),
     Expr(Ast),
-    Begin(Vec<TopAst>, Box<TopAst>),
+    Begin(Vec<TopAst>),
+    Delay(Option<ModName>, Value),
 }
 impl TopAst {
     // Note: this is for debugging purporse only.
     // Consistency(i.e. ast == build_top_ast(ast.to_value())) not guaranteed.
     pub fn to_value(&self) -> Value {
         match self {
-            TopAst::Begin(asts, last) => {
+            TopAst::Begin(asts) => {
                 let asts = asts.iter().map(|x| x.to_value()).collect::<Vec<_>>();
-                list!["begin"; Value::list_with_last(asts.iter(), list![last.to_value()])]
+                list!["begin"; Value::list(asts.iter())]
             }
             TopAst::Define(module_name, name, ast) => {
                 let mut abs_name = module_name.to_string();
@@ -39,6 +40,14 @@ impl TopAst {
             }
             TopAst::Import(name, absname) => list!["import-name", name, absname],
             TopAst::Expr(ast) => ast.to_value(),
+            TopAst::Delay(mname, value) => list![
+                "<delay>",
+                &mname
+                    .as_ref()
+                    .map(|n| n.to_string())
+                    .unwrap_or_else(|| "(global)".into()),
+                value.clone()
+            ],
         }
     }
 }

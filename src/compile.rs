@@ -30,6 +30,9 @@ struct StaticEnv<'a> {
 }
 impl<'a> StaticEnv<'a> {
     fn new(global: &GlobalEnv) -> StaticEnv {
+        Self::new_with_current_module(global, None)
+    }
+    fn new_with_current_module(global: &GlobalEnv, current_module: Option<ModName>) -> StaticEnv {
         StaticEnv {
             global,
             new_globals: Default::default(),
@@ -37,7 +40,7 @@ impl<'a> StaticEnv<'a> {
             local_depth: 0,
             args: Default::default(),
             rec_depth: 0,
-            current_module: None,
+            current_module,
             imports: global.imports().clone(),
             modules: global.modules().clone(),
         }
@@ -241,6 +244,14 @@ pub fn build_top_ast(expr: &Value, global: &GlobalEnv) -> Result<TopAst, EvalErr
     let mut env = StaticEnv::new(global);
     build_top_ast_impl(expr, &mut env)
 }
+pub fn build_top_ast_within_module(
+    expr: &Value,
+    global: &GlobalEnv,
+    current_module: Option<ModName>,
+) -> Result<TopAst, EvalError> {
+    let mut env = StaticEnv::new_with_current_module(global, current_module);
+    build_top_ast_impl(expr, &mut env)
+}
 fn build_top_ast_impl(expr: &Value, env: &mut StaticEnv) -> Result<TopAst, EvalError> {
     let expr = match expand_macro(
         expr,
@@ -259,14 +270,16 @@ fn build_top_ast_impl(expr: &Value, env: &mut StaticEnv) -> Result<TopAst, EvalE
                 let values = cdr
                     .to_vec()
                     .ok_or_else(|| EvalError::IllegalArgument(cdr.clone()))?;
-                let mut values = values
-                    .iter()
-                    .map(|v| build_top_ast_impl(v, env))
-                    .collect::<Result<Vec<_>, _>>()?;
-                if let Some(last) = values.pop() {
-                    Ok(TopAst::Begin(values, last.into()))
+                if let Some((head, rest)) = values.split_first() {
+                    let mut exprs = vec![];
+                    let head = build_top_ast_impl(head, env)?;
+                    exprs.push(head);
+                    for v in rest {
+                        exprs.push(TopAst::Delay(env.current_module.clone(), v.clone()));
+                    }
+                    Ok(TopAst::Begin(exprs))
                 } else {
-                    Err(EvalError::IllegalArgument(list![]))
+                    Ok(TopAst::Expr(Ast::Const(Value::Nil)))
                 }
             }
             Some(deftype @ "__define") | Some(deftype @ "__defmacro") => {
@@ -316,10 +329,10 @@ fn build_top_ast_impl(expr: &Value, env: &mut StaticEnv) -> Result<TopAst, EvalE
                 let body = list!["begin"; body];
                 let the_module = current_module.child_module(&simple_name);
                 let body = env.module_scope(the_module, |env| build_top_ast_impl(&body, env))?;
-                Ok(TopAst::Begin(
-                    vec![TopAst::DefModule(parent_name, simple_name)],
-                    body.into(),
-                ))
+                Ok(TopAst::Begin(vec![
+                    TopAst::DefModule(parent_name, simple_name),
+                    body,
+                ]))
             }
             Some("import-from") => {
                 let err = || EvalError::IllegalArgument(cdr.clone());
@@ -364,10 +377,7 @@ fn build_top_ast_impl(expr: &Value, env: &mut StaticEnv) -> Result<TopAst, EvalE
                     .iter()
                     .map(|name| TopAst::Import(name.to_string(), mod_name.abs_name(name)))
                     .collect::<Vec<_>>();
-                Ok(TopAst::Begin(
-                    imports,
-                    TopAst::Expr(Ast::Const(Value::Nil)).into(),
-                ))
+                Ok(TopAst::Begin(imports))
             }
             _ => {
                 let ast = build_ast(&expr, env)?;

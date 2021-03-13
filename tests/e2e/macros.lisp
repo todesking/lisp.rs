@@ -22,3 +22,11 @@
 (assert-error
  (lambda () (my-let1 x y))
  '(Macro User my-let1-error))
+
+
+(defmacro (test-id1 x) x)
+(assert-eq (test-id1 123) 123)
+
+(begin
+  (defmacro (test-id2 x) x)
+  (assert-eq (test-id2 123) 123))

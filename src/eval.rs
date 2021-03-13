@@ -12,6 +12,7 @@ use std::cell::RefCell;
 use crate::ast::Ast;
 use crate::ast::QuasiQuote;
 use crate::build_top_ast;
+use crate::compile::build_top_ast_within_module;
 use crate::EvalError;
 use crate::TopAst;
 
@@ -27,11 +28,12 @@ type Args = Rc<RefCell<Vec<Value>>>;
 pub fn eval_top_ast<'v, 'g>(top: &'v TopAst, global: &mut impl GlobalWrite<'g>) -> EvalResult {
     let args = Rc::new(RefCell::new(Vec::new()));
     match top {
-        TopAst::Begin(asts, ast) => {
+        TopAst::Begin(asts) => {
+            let mut value = Value::Nil;
             for ast in asts {
-                eval_top_ast(ast, global)?;
+                value = eval_top_ast(ast, global)?;
             }
-            eval_top_ast(ast, global)
+            Ok(value)
         }
         TopAst::Define(mname, simple_name, value) => {
             let mut name = String::from(mname);
@@ -66,6 +68,11 @@ pub fn eval_top_ast<'v, 'g>(top: &'v TopAst, global: &mut impl GlobalWrite<'g>) 
             .map(|_| Value::Nil)
             .ok_or_else(|| EvalError::ReadOnly("import table".to_owned())),
         TopAst::Expr(value) => eval_local_loop(&value, global, &None, &args),
+        TopAst::Delay(current_module, value) => {
+            let value =
+                build_top_ast_within_module(value, global.as_ref(), current_module.clone())?;
+            eval_top_ast(&value, global)
+        }
     }
 }
 
