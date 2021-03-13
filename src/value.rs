@@ -502,7 +502,7 @@ impl std::fmt::Display for RefValue {
 }
 
 pub trait ToValue {
-    fn to_value(self) -> Value;
+    fn to_value(&self) -> Value;
 }
 
 impl<T: ToValue> From<T> for Value {
@@ -512,30 +512,30 @@ impl<T: ToValue> From<T> for Value {
 }
 
 impl ToValue for &i32 {
-    fn to_value(self) -> Value {
-        Value::Int(*self)
+    fn to_value(&self) -> Value {
+        Value::Int(**self)
     }
 }
 
 impl ToValue for i32 {
-    fn to_value(self) -> Value {
-        Value::Int(self)
+    fn to_value(&self) -> Value {
+        Value::Int(*self)
     }
 }
 
 impl ToValue for bool {
-    fn to_value(self) -> Value {
-        Value::Bool(self)
+    fn to_value(&self) -> Value {
+        Value::Bool(*self)
     }
 }
 
 impl ToValue for &str {
-    fn to_value(self) -> Value {
+    fn to_value(&self) -> Value {
         Value::sym(self)
     }
 }
 impl ToValue for &String {
-    fn to_value(self) -> Value {
+    fn to_value(&self) -> Value {
         Value::sym(self)
     }
 }

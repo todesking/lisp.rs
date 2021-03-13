@@ -185,7 +185,7 @@ fn parse_str_body(s: &str) -> Result<(String, &str), ParseError> {
 
 fn parse_num(s: &str) -> ParseResult {
     let (minus, s) = try_consume(s, "-");
-    let (s1, s2) = many(s, |c| '0' <= c && c <= '9');
+    let (s1, s2) = many(s, |c| ('0'..='9').contains(&c));
     if s1.is_empty() {
         Err(ParseError::Unexpected(s2.to_owned()))
     } else {

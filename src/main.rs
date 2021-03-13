@@ -15,6 +15,7 @@ struct Ctx {
     parser: Parser,
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn main() -> std::io::Result<()> {
     let mut ctx = Ctx {
         show_raw_input: false,

@@ -82,9 +82,11 @@ enum Cont {
 }
 
 impl Cont {
+    #[allow(clippy::unnecessary_wraps)]
     fn ok_ret(v: Value) -> Result<Cont, EvalError> {
         Ok(Cont::Ret(v))
     }
+    #[allow(clippy::unnecessary_wraps)]
     fn ok_cont(f: Value, args: Vec<Value>) -> Result<Cont, EvalError> {
         Ok(Cont::Cont(f, args))
     }
