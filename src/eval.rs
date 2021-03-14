@@ -35,35 +35,37 @@ pub fn eval_top_ast<'v, 'g>(top: &'v TopAst, global: &mut impl GlobalWrite<'g>) 
             }
             Ok(value)
         }
-        TopAst::Define(abs_name, value) => {
-            let (mname, name) = abs_name.split();
+        TopAst::Define(full_name, value) => {
             global
-                .define_module_member(mname, name)
-                .ok_or_else(|| EvalError::ReadOnly(abs_name.to_string()))?;
+                .define_module_member(full_name.module_name.clone(), full_name.simple_name.clone())
+                .ok_or_else(|| EvalError::ReadOnly(full_name.to_string()))?;
             global
-                .set(abs_name.clone(), Value::nil())
-                .ok_or_else(|| EvalError::ReadOnly(abs_name.to_string()))?;
+                .set(full_name.clone(), Value::nil())
+                .ok_or_else(|| EvalError::ReadOnly(full_name.to_string()))?;
             let value = eval_local_loop(value, global, &None, &args)?;
             global
-                .set(abs_name.clone(), value)
-                .ok_or_else(|| EvalError::ReadOnly(abs_name.to_string()))?;
+                .set(full_name.clone(), value)
+                .ok_or_else(|| EvalError::ReadOnly(full_name.to_string()))?;
             Ok(Value::nil())
         }
-        TopAst::DefMacro(abs_name, value) => {
+        TopAst::DefMacro(full_name, value) => {
             let value = eval_local_loop(value, global, &None, &args)?;
             global
-                .set_macro(abs_name.clone(), value)
-                .ok_or_else(|| EvalError::ReadOnly(abs_name.to_string()))?;
-            let (mname, name) = abs_name.split();
-            global.define_module_member(mname, name);
+                .set_macro(full_name.clone(), value)
+                .ok_or_else(|| EvalError::ReadOnly(full_name.to_string()))?;
+            global
+                .define_module_member(full_name.module_name.clone(), full_name.simple_name.clone());
             Ok(Value::nil())
         }
-        TopAst::DefModule(abs_name) => {
-            let (mname, name) = abs_name.split();
-            global
-                .define_module_member(mname, name)
-                .map(|_| Value::Nil)
-                .ok_or_else(|| EvalError::ReadOnly(abs_name.to_string()))
+        TopAst::DefModule(module_name) => {
+            if let Some((parent_name, name)) = module_name.clone().split() {
+                global
+                    .define_module_member(parent_name, name)
+                    .map(|_| Value::Nil)
+                    .ok_or_else(|| EvalError::ReadOnly(module_name.to_string()))
+            } else {
+                Ok(Value::Nil)
+            }
         }
         TopAst::Import(name, absname) => global
             .import(name.clone(), absname.clone())
@@ -361,20 +363,22 @@ mod test {
         eval_str("1", &mut env).should_ok(1);
     }
 
-    // TODO
-    fn abs_name(src: &str) -> crate::name::AbsName {
+    // TODO: MemberName::parse
+    fn member_name(src: &str) -> crate::name::MemberName {
         crate::name::AbsName::new(
             src.split(':').collect::<Vec<_>>()[1..]
                 .iter()
                 .map(|&n| crate::name::SimpleName::from(n).unwrap())
                 .collect::<Vec<_>>(),
         )
+        .try_into_member_name()
+        .unwrap()
     }
 
     #[test]
     fn test_sym() {
         let mut env = GlobalEnv::new();
-        env.set(abs_name(":global:x"), 123.into());
+        env.set(member_name(":global:x"), 123.into());
 
         eval_str("x", &mut env).should_ok(123);
     }
@@ -475,7 +479,7 @@ mod test {
     #[test]
     fn test_lambda_lookup_global() {
         let mut env = GlobalEnv::new();
-        env.set(abs_name(":global:x"), 1.into());
+        env.set(member_name(":global:x"), 1.into());
 
         eval_str("((lambda () x))", &mut env).should_ok(1);
     }
@@ -499,18 +503,18 @@ mod test {
     fn test_fun() {
         let mut env = GlobalEnv::new();
 
-        env.set(abs_name(":global:f0"), Value::fun0(":global:f0", || 123));
+        env.set(member_name(":global:f0"), Value::fun0(":global:f0", || 123));
         eval_str("(f0)", &mut env).should_ok(123);
         eval_str("(f0 1)", &mut env).should_error(EvalError::IllegalArgument(list![1]));
 
-        env.set(abs_name(":global:f1"), Value::fun1("f1", |n: i32| n));
+        env.set(member_name(":global:f1"), Value::fun1("f1", |n: i32| n));
         eval_str("(f1)", &mut env).should_error(EvalError::IllegalArgument(list![]));
         eval_str("(f1 1 2)", &mut env).should_error(EvalError::IllegalArgument(list![1, 2]));
         eval_str("(f1 'a)", &mut env).should_error(EvalError::InvalidArg);
         eval_str("(f1 1)", &mut env).should_ok(1);
 
         env.set(
-            abs_name(":global:f2"),
+            member_name(":global:f2"),
             Value::fun2("f2", |n: i32, m: i32| n + m),
         );
         eval_str("(f2)", &mut env).should_error(EvalError::IllegalArgument(list![]));
@@ -520,7 +524,7 @@ mod test {
         eval_str("(f2 1 2)", &mut env).should_ok(3);
 
         env.set(
-            abs_name(":global:sum1"),
+            member_name(":global:sum1"),
             Value::fun_reduce("sum1", |a: i32, x: i32| a + x),
         );
         eval_str("(sum1)", &mut env).should_error(EvalError::IllegalArgument(list![]));

@@ -1,4 +1,5 @@
 use crate::name::AbsName;
+use crate::name::MemberName;
 use crate::name::SimpleName;
 use crate::value::LambdaDef;
 use crate::EvalError;
@@ -8,10 +9,10 @@ use std::rc::Rc;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TopAst {
-    Define(AbsName, Ast),
-    DefMacro(AbsName, Ast),
+    Define(MemberName, Ast),
+    DefMacro(MemberName, Ast),
     DefModule(AbsName),
-    Import(SimpleName, AbsName),
+    Import(SimpleName, MemberName),
     Expr(Ast),
     Begin(Vec<TopAst>),
     Delay(Option<AbsName>, Value),

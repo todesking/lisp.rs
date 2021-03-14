@@ -7,17 +7,17 @@ use crate::Value;
 use std::rc::Rc;
 
 pub fn load_predef(global: &mut GlobalEnv) {
-    let ns_global = crate::name::AbsName::root().child_name_or_die("global");
+    let ns_global = crate::name::AbsName::global();
 
-    global.set_fun2(ns_global.child_name_or_die("eq?"), |lhs, rhs| {
+    global.set_fun2(ns_global.member_name_or_die("eq?"), |lhs, rhs| {
         Ok(Value::bool(lhs == rhs))
     });
 
-    global.set_fun(ns_global.child_name_or_die("error"), |args| {
+    global.set_fun(ns_global.member_name_or_die("error"), |args| {
         Err(EvalError::User(Value::list(args.iter())))
     });
 
-    global.set_fun(ns_global.child_name_or_die("make-symbol"), |args| {
+    global.set_fun(ns_global.member_name_or_die("make-symbol"), |args| {
         if args.len() != 1 {
             return Err(EvalError::illegal_argument(args));
         }
@@ -28,7 +28,7 @@ pub fn load_predef(global: &mut GlobalEnv) {
         }
     });
 
-    global.set_fun1(ns_global.child_name_or_die("to-string"), |v| {
+    global.set_fun1(ns_global.member_name_or_die("to-string"), |v| {
         let content = match v {
             Value::Sym(v) | Value::Str(v) => v.clone(),
             Value::Int(v) => Rc::from(v.to_string()),
@@ -37,7 +37,7 @@ pub fn load_predef(global: &mut GlobalEnv) {
         };
         Ok(Value::Str(content))
     });
-    global.set_fun(ns_global.child_name_or_die("str-+"), |args| {
+    global.set_fun(ns_global.member_name_or_die("str-+"), |args| {
         let args = args
             .iter()
             .map(|v| match v {
@@ -49,7 +49,7 @@ pub fn load_predef(global: &mut GlobalEnv) {
     });
 
     global.set_global_fun(
-        ns_global.child_name_or_die("macro-expand"),
+        ns_global.member_name_or_die("macro-expand"),
         |args, global| {
             if args.len() != 1 {
                 Err(EvalError::illegal_argument(args))
@@ -59,7 +59,7 @@ pub fn load_predef(global: &mut GlobalEnv) {
         },
     );
 
-    global.set_global_fun(ns_global.child_name_or_die("print-global"), |_, global| {
+    global.set_global_fun(ns_global.member_name_or_die("print-global"), |_, global| {
         dbg!(&global); // (print-global)
         Ok(Value::Nil)
     });
@@ -70,12 +70,12 @@ pub fn load_predef(global: &mut GlobalEnv) {
 }
 
 fn load_arithmetic(global: &mut GlobalEnv) {
-    let ns_global = crate::name::AbsName::root().child_name_or_die("global");
+    let ns_global = crate::name::AbsName::global();
     global.set(
-        ns_global.child_name_or_die("+"),
+        ns_global.member_name_or_die("+"),
         Value::fun_reduce("+", |l: i32, r: i32| l + r),
     );
-    global.set_fun(ns_global.child_name_or_die("-"), |args| {
+    global.set_fun(ns_global.member_name_or_die("-"), |args| {
         let mut it = args.iter();
         let x0 = it.next().ok_or_else(|| EvalError::illegal_argument(args))?;
         let x0 = i32::extract(x0).ok_or(EvalError::InvalidArg)?;
@@ -94,48 +94,48 @@ fn load_arithmetic(global: &mut GlobalEnv) {
         }
     });
     global.set(
-        ns_global.child_name_or_die("*"),
+        ns_global.member_name_or_die("*"),
         Value::fun_reduce("*", |l: i32, r: i32| l * r),
     );
     global.set(
-        ns_global.child_name_or_die("/"),
+        ns_global.member_name_or_die("/"),
         Value::fun2("/", |l: i32, r: i32| l / r),
     );
     global.set(
-        ns_global.child_name_or_die("%"),
+        ns_global.member_name_or_die("%"),
         Value::fun2("%", |l: i32, r: i32| l % r),
     );
     global.set(
-        ns_global.child_name_or_die("<"),
+        ns_global.member_name_or_die("<"),
         Value::fun2("<", |l: i32, r: i32| l < r),
     );
     global.set(
-        ns_global.child_name_or_die("<="),
+        ns_global.member_name_or_die("<="),
         Value::fun2("<=", |l: i32, r: i32| l <= r),
     );
     global.set(
-        ns_global.child_name_or_die(">"),
+        ns_global.member_name_or_die(">"),
         Value::fun2(">", |l: i32, r: i32| l > r),
     );
     global.set(
-        ns_global.child_name_or_die(">="),
+        ns_global.member_name_or_die(">="),
         Value::fun2(">=", |l: i32, r: i32| l >= r),
     );
 }
 
 fn load_list_ops(global: &mut GlobalEnv) {
-    let ns_global = crate::name::AbsName::root().child_name_or_die("global");
+    let ns_global = crate::name::AbsName::global();
 
-    global.set_fun2(ns_global.child_name_or_die("set-car!"), |x, v| {
+    global.set_fun2(ns_global.member_name_or_die("set-car!"), |x, v| {
         x.set_car(v.clone(), true)
     });
-    global.set_fun2(ns_global.child_name_or_die("set-cdr!"), |x, v| {
+    global.set_fun2(ns_global.member_name_or_die("set-cdr!"), |x, v| {
         x.set_cdr(v.clone(), true)
     });
-    global.set_fun2(ns_global.child_name_or_die("unsafe-set-car!"), |x, v| {
+    global.set_fun2(ns_global.member_name_or_die("unsafe-set-car!"), |x, v| {
         x.set_car(v.clone(), false)
     });
-    global.set_fun2(ns_global.child_name_or_die("unsafe-set-cdr!"), |x, v| {
+    global.set_fun2(ns_global.member_name_or_die("unsafe-set-cdr!"), |x, v| {
         x.set_cdr(v.clone(), false)
     });
 }

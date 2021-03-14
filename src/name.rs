@@ -11,16 +11,43 @@ impl AbsName {
         AbsName(vec![])
     }
 
-    // TODO: Make name: SimpleName
-    pub fn child_name(&self, name: &SimpleName) -> AbsName {
-        let mut abs_name = self.clone();
-        abs_name.0.push(name.clone());
-        abs_name
+    pub fn member_name(&self, name: SimpleName) -> MemberName {
+        self.clone().into_member_name(name)
     }
 
-    pub fn child_name_or_die(&self, name: &str) -> AbsName {
-        let name = SimpleName::from(name).unwrap();
-        self.child_name(&name)
+    pub fn into_member_name(self, name: SimpleName) -> MemberName {
+        MemberName::new(self, name)
+    }
+
+    pub fn try_into_member_name(mut self) -> Option<MemberName> {
+        self.0.pop().map(|name| MemberName::new(self, name))
+    }
+
+    pub fn member_name_or_die(&self, name: &str) -> MemberName {
+        let name = SimpleName::from(name).unwrap_or_else(|| {
+            panic!("Not a simple name: {}", name);
+        });
+        self.member_name(name)
+    }
+
+    pub fn into_child_name(mut self, name: SimpleName) -> AbsName {
+        self.0.push(name);
+        self
+    }
+
+    pub fn into_child_name_or_die(self, name: &str) -> AbsName {
+        // TODO: SimpleName::parse_or_die
+        let name = SimpleName::from(name).unwrap_or_else(|| {
+            panic!("Not a simple name: {}", name);
+        });
+        self.into_child_name(name)
+    }
+
+    pub fn into_descendant_name(mut self, names: impl IntoIterator<Item = SimpleName>) -> AbsName {
+        for name in names {
+            self.0.push(name);
+        }
+        self
     }
 
     pub fn relative_name(&self, names: impl IntoIterator<Item = SimpleName>) -> AbsName {
@@ -30,13 +57,8 @@ impl AbsName {
         }
         AbsName(v)
     }
-
-    // TODO: remove this
-    pub fn split(&self) -> (AbsName, SimpleName) {
-        let last = self.0.last().unwrap().clone();
-        let mut heads = self.0.clone();
-        heads.pop();
-        (AbsName(heads), last)
+    pub fn split(mut self) -> Option<(AbsName, SimpleName)> {
+        self.0.pop().map(|n| (self, n))
     }
 }
 impl std::fmt::Display for AbsName {
@@ -71,5 +93,33 @@ impl std::fmt::Display for SimpleName {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         fmt.write_str(&self.0)?;
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct MemberName {
+    pub module_name: AbsName,
+    pub simple_name: SimpleName,
+}
+impl MemberName {
+    pub fn new(module_name: AbsName, simple_name: SimpleName) -> MemberName {
+        MemberName {
+            module_name,
+            simple_name,
+        }
+    }
+    pub fn to_abs_name(&self) -> AbsName {
+        self.clone().into_abs_name()
+    }
+    pub fn into_abs_name(self) -> AbsName {
+        self.module_name.into_child_name(self.simple_name)
+    }
+}
+impl std::fmt::Display for MemberName {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        use std::fmt::Write;
+        self.module_name.fmt(fmt)?;
+        fmt.write_char(':')?;
+        self.simple_name.fmt(fmt)
     }
 }

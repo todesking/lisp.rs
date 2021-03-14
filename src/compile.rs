@@ -3,6 +3,7 @@ use crate::ast::MatchPattern;
 use crate::ast::QuasiQuote;
 use crate::ast::VarRef;
 use crate::name::AbsName;
+use crate::name::MemberName;
 use crate::name::SimpleName;
 use crate::value::LambdaDef;
 use crate::value::RefValue;
@@ -20,12 +21,12 @@ struct StaticEnv<'a> {
     global: &'a GlobalEnv,
     locals: HashMap<SimpleName, VarRef>,
     // TODO: back to new_global: Option<(AbsName, usize)>
-    new_globals: HashMap<AbsName, usize>,
+    new_globals: HashMap<MemberName, usize>,
     local_depth: usize,
     args: Vec<SimpleName>,
     rec_depth: usize,
     current_module: Option<AbsName>,
-    imports: HashMap<SimpleName, AbsName>,
+    imports: HashMap<SimpleName, MemberName>,
     module_members: HashMap<AbsName, HashSet<SimpleName>>,
 }
 impl<'a> StaticEnv<'a> {
@@ -45,7 +46,7 @@ impl<'a> StaticEnv<'a> {
             module_members: global.module_members().clone(),
         }
     }
-    fn new_global(&mut self, name: &AbsName) {
+    fn new_global(&mut self, name: &MemberName) {
         // TODO: maintain module_members
         if self.lookup_global_id(name).is_none() {
             let new_id = self.global.next_id() + self.new_globals.len();
@@ -66,7 +67,7 @@ impl<'a> StaticEnv<'a> {
                 self.lookup_global_id(&abs_name).map(VarRef::Global)
             })
     }
-    fn lookup_global_id(&self, name: &AbsName) -> Option<usize> {
+    fn lookup_global_id(&self, name: &MemberName) -> Option<usize> {
         self.new_globals
             .get(name)
             .cloned()
@@ -113,13 +114,14 @@ impl<'a> StaticEnv<'a> {
         self.imports = imports;
         ret
     }
-    fn has_module_member(&self, mname: &AbsName, name: &SimpleName) -> bool {
+    fn has_module_member(&self, module_name: AbsName, name: SimpleName) -> bool {
+        let member_name = module_name.into_member_name(name);
         // TODO: remove this: every globals should registered by self.module_members
-        self.lookup_global_id(&mname.child_name(name)).is_some()
+        self.lookup_global_id(&member_name).is_some()
             || self
                 .module_members
-                .get(mname)
-                .map(|names| names.contains(name))
+                .get(&member_name.module_name)
+                .map(|names| names.contains(&member_name.simple_name))
                 .unwrap_or(false)
     }
     fn has_module(&self, mname: &AbsName) -> bool {
@@ -167,8 +169,8 @@ fn resolve_global_name(
     name: &str,
     current_module: &Option<AbsName>,
     module_members: &HashMap<AbsName, HashSet<SimpleName>>,
-    imports: &HashMap<SimpleName, AbsName>,
-) -> Option<AbsName> {
+    imports: &HashMap<SimpleName, MemberName>,
+) -> Option<MemberName> {
     let name = Name::parse(name)?;
     match name {
         Name::Single(name) => {
@@ -180,14 +182,15 @@ fn resolve_global_name(
                     .map(|names| names.contains(&name))
                     .unwrap_or(false)
                 {
-                    return Some(current_module.child_name(&name));
+                    return Some(current_module.member_name(name));
                 }
             }
-            if let Some(absname) = imports.get(&name) {
-                Some(absname.clone())
+            if let Some(found) = imports.get(&name) {
+                Some(found.clone())
             } else {
+                // TODO: search global if current_module = None, else return None
                 let current_module = current_module.clone().unwrap_or_else(AbsName::global);
-                Some(current_module.child_name(&name))
+                Some(current_module.into_member_name(name))
             }
         }
         Name::Relative(rel_name, name) => {
@@ -202,18 +205,23 @@ fn resolve_global_name(
             if parts.is_empty() {
                 return None;
             }
+            let mut parts = parts;
             if let Some(prefix) = imports.get(&parts[0]) {
-                Some(prefix.relative_name(parts[1..].to_vec()).child_name(&name))
+                Some(
+                    prefix
+                        .to_abs_name()
+                        .into_descendant_name(parts.drain(1..))
+                        .into_member_name(name),
+                )
             } else {
                 let root = current_module.clone().unwrap_or_else(AbsName::root);
-                let abs_name = root.relative_name(parts).child_name(&name);
-                Some(abs_name)
+                Some(root.into_descendant_name(parts).into_member_name(name))
             }
         }
         Name::Absolute(mod_name, name) =>
         // TODO
         {
-            Some(mod_name.child_name(&SimpleName::from(name).unwrap()))
+            Some(mod_name.member_name(SimpleName::from(name).unwrap()))
         }
     }
 }
@@ -227,7 +235,7 @@ fn expand_macro(
     global: &GlobalEnv,
     current_module: &Option<AbsName>,
     modules: &HashMap<AbsName, HashSet<SimpleName>>,
-    imports: &HashMap<SimpleName, AbsName>,
+    imports: &HashMap<SimpleName, MemberName>,
 ) -> Result<Value, EvalError> {
     let mut expr = expr.clone();
     loop {
@@ -248,7 +256,7 @@ fn extract_macro_call(
     global: &GlobalEnv,
     current_module: &Option<AbsName>,
     modules: &HashMap<AbsName, HashSet<SimpleName>>,
-    imports: &HashMap<SimpleName, AbsName>,
+    imports: &HashMap<SimpleName, MemberName>,
 ) -> Option<(Value, Value)> {
     let (car, cdr) = expr.to_cons()?;
     let name = car.as_sym()?;
@@ -307,8 +315,8 @@ fn build_top_ast_impl(expr: &Value, env: &mut StaticEnv) -> Result<TopAst, EvalE
                                 env.current_module.clone().unwrap_or_else(AbsName::global);
                             // TODO
                             let name = SimpleName::from(&*name).unwrap();
-                            let abs_name = current_module.child_name(&name);
-                            env.new_global(&abs_name);
+                            let member_name = current_module.member_name(name.clone());
+                            env.new_global(&member_name);
                             // TODO: move to StaticEnv
                             env.module_members
                                 .entry(current_module)
@@ -316,8 +324,8 @@ fn build_top_ast_impl(expr: &Value, env: &mut StaticEnv) -> Result<TopAst, EvalE
                                 .insert(name);
                             let value = build_ast(&value, &env)?;
                             let ast = match deftype {
-                                "__define" => TopAst::Define(abs_name, value),
-                                "__defmacro" => TopAst::DefMacro(abs_name, value),
+                                "__define" => TopAst::Define(member_name, value),
+                                "__defmacro" => TopAst::DefMacro(member_name, value),
                                 _ => unreachable!(),
                             };
                             Ok(ast)
@@ -345,7 +353,7 @@ fn build_top_ast_impl(expr: &Value, env: &mut StaticEnv) -> Result<TopAst, EvalE
                     .or_insert_with(HashSet::new)
                     .insert(simple_name.clone());
                 let body = list!["begin"; body];
-                let the_module = current_module.child_name(&simple_name);
+                let the_module = current_module.into_child_name(simple_name);
                 let body =
                     env.module_scope(the_module.clone(), |env| build_top_ast_impl(&body, env))?;
                 Ok(TopAst::Begin(vec![TopAst::DefModule(the_module), body]))
@@ -372,13 +380,14 @@ fn build_top_ast_impl(expr: &Value, env: &mut StaticEnv) -> Result<TopAst, EvalE
                     &env.module_members,
                     &env.imports,
                 )
+                .map(|n| n.into_abs_name())
                 .ok_or_else(err)?;
                 if !env.has_module(&mod_name) {
                     return Err(EvalError::ModuleNotFound(mod_name.to_string()));
                 }
                 let undefined_names = names
                     .iter()
-                    .filter(|name| !env.has_module_member(&mod_name, name))
+                    .filter(|&name| !env.has_module_member(mod_name.clone(), name.clone()))
                     .collect::<Vec<_>>();
                 if !undefined_names.is_empty() {
                     let undefined_names = undefined_names
@@ -390,12 +399,13 @@ fn build_top_ast_impl(expr: &Value, env: &mut StaticEnv) -> Result<TopAst, EvalE
                     )));
                 }
                 for name in names.iter() {
-                    env.imports.insert(name.clone(), mod_name.child_name(&name));
+                    env.imports
+                        .insert(name.clone(), mod_name.member_name(name.clone()));
                 }
                 let imports = names
                     .into_iter()
                     .map(|name| {
-                        let child_name = mod_name.child_name(&name);
+                        let child_name = mod_name.member_name(name.clone());
                         TopAst::Import(name, child_name)
                     })
                     .collect::<Vec<_>>();
@@ -804,12 +814,12 @@ fn build_ast_set_global(expr: &Value, env: &StaticEnv) -> Result<Ast, EvalError>
                 let current_module = env.current_module.clone().unwrap_or_else(AbsName::global);
                 // TODO
                 let name = SimpleName::from(name).unwrap();
-                current_module.child_name(&name)
+                current_module.into_member_name(name)
             }
             Name::Absolute(mname, name) => {
                 // TODO
                 let name = SimpleName::from(name).unwrap();
-                mname.child_name(&name)
+                mname.member_name(name)
             }
             Name::Relative(_, name) => {
                 return Err(EvalError::VariableNotFound(name));
