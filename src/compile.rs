@@ -55,7 +55,7 @@ impl<'a> StaticEnv<'a> {
     }
     fn lookup(&self, name: &str) -> Option<VarRef> {
         // TODO: import
-        SimpleName::from(name)
+        SimpleName::parse(name)
             .and_then(|name| self.locals.get(&name).cloned())
             .or_else(|| {
                 let abs_name = resolve_global_name(
@@ -129,38 +129,28 @@ impl<'a> StaticEnv<'a> {
     }
 }
 
+// TODO: Move to module name
 #[derive(Debug, PartialEq, Eq)]
 enum Name {
-    // TODO: use SimpleName
-    Single(String),
-    // TODO: use SimpleName for .1
-    // TODO: change .0 to Vec<SimpleName>
-    Relative(String, String),
-    // TODO: use SimpleName for .1
-    Absolute(AbsName, String),
+    Single(SimpleName),
+    Relative(Vec<SimpleName>, SimpleName),
+    Absolute(MemberName),
 }
 impl Name {
     fn parse(name: &str) -> Option<Name> {
-        let parts = name.split(':').collect::<Vec<_>>();
-        if let Some((name, parts)) = parts.split_last() {
-            if name.is_empty() {
-                None
-            } else if parts.is_empty() {
-                Some(Name::Single((*name).to_owned()))
-            } else if parts[1..].iter().any(|p| p.is_empty()) {
-                None
-            } else if parts[0].is_empty() {
-                // TODO
-                let parts = parts[1..]
-                    .iter()
-                    .map(|&p| SimpleName::from(p).unwrap())
-                    .collect::<Vec<_>>();
-                Some(Name::Absolute(AbsName::new(parts), name.to_string()))
-            } else {
-                Some(Name::Relative(parts.join(":"), name.to_string()))
-            }
+        let (parts, is_abs) = SimpleName::split(name)?;
+        if is_abs {
+            AbsName::new(parts)
+                .try_into_member_name()
+                .map(Name::Absolute)
+        } else if parts.len() == 1 {
+            Some(Name::Single(parts[0].clone()))
         } else {
-            None
+            assert!(parts.len() > 1);
+            let mut parts = parts;
+            let last = parts.pop().unwrap_or_else(|| unreachable!());
+            let prefix = parts;
+            Some(Name::Relative(prefix, last))
         }
     }
 }
@@ -174,8 +164,6 @@ fn resolve_global_name(
     let name = Name::parse(name)?;
     match name {
         Name::Single(name) => {
-            // TODO: Remove this in future
-            let name = SimpleName::from(name).unwrap();
             if let Some(current_module) = current_module {
                 if module_members
                     .get(&current_module)
@@ -188,29 +176,17 @@ fn resolve_global_name(
             if let Some(found) = imports.get(&name) {
                 Some(found.clone())
             } else {
-                // TODO: search global if current_module = None, else return None
+                // TODO: search global.module_members if current_module = None, else return None
                 let current_module = current_module.clone().unwrap_or_else(AbsName::global);
                 Some(current_module.into_member_name(name))
             }
         }
-        Name::Relative(rel_name, name) => {
-            // TODO
-            let parts = rel_name
-                .split(':')
-                .map(|n| SimpleName::from(n).unwrap())
-                .collect::<Vec<_>>();
-            // TODO
-            let name = SimpleName::from(name).unwrap();
-            // TODO: ???
-            if parts.is_empty() {
-                return None;
-            }
-            let mut parts = parts;
+        Name::Relative(parts, name) => {
             if let Some(prefix) = imports.get(&parts[0]) {
                 Some(
                     prefix
                         .to_abs_name()
-                        .into_descendant_name(parts.drain(1..))
+                        .into_descendant_name(parts[1..].iter().cloned())
                         .into_member_name(name),
                 )
             } else {
@@ -218,11 +194,7 @@ fn resolve_global_name(
                 Some(root.into_descendant_name(parts).into_member_name(name))
             }
         }
-        Name::Absolute(mod_name, name) =>
-        // TODO
-        {
-            Some(mod_name.member_name(SimpleName::from(name).unwrap()))
-        }
+        Name::Absolute(name) => Some(name),
     }
 }
 
@@ -314,7 +286,8 @@ fn build_top_ast_impl(expr: &Value, env: &mut StaticEnv) -> Result<TopAst, EvalE
                             let current_module =
                                 env.current_module.clone().unwrap_or_else(AbsName::global);
                             // TODO
-                            let name = SimpleName::from(&*name).unwrap();
+                            let name = SimpleName::parse(&*name)
+                                .ok_or_else(|| EvalError::IllegalArgument(cdr.clone()))?;
                             let member_name = current_module.member_name(name.clone());
                             env.new_global(&member_name);
                             // TODO: move to StaticEnv
@@ -343,10 +316,9 @@ fn build_top_ast_impl(expr: &Value, env: &mut StaticEnv) -> Result<TopAst, EvalE
                 let mname = mname.as_sym().ok_or_else(err)?;
                 let mname = Name::parse(mname).ok_or_else(err)?;
                 let simple_name = match mname {
-                    // TODO
-                    Name::Single(name) => SimpleName::from(name).unwrap(),
-                    _ => return Err(err()),
-                };
+                    Name::Single(name) => Ok(name),
+                    _ => Err(err()),
+                }?;
                 // TODO: move to StaticEnv
                 env.module_members
                     .entry(current_module.clone())
@@ -368,11 +340,11 @@ fn build_top_ast_impl(expr: &Value, env: &mut StaticEnv) -> Result<TopAst, EvalE
                     .map(|n| n.as_sym())
                     .collect::<Option<Vec<_>>>()
                     .ok_or_else(err)?;
-                // TODO
                 let names = names
                     .into_iter()
-                    .map(|n| SimpleName::from(&**n).unwrap())
-                    .collect::<Vec<_>>();
+                    .map(|n| SimpleName::parse(&**n))
+                    .collect::<Option<Vec<_>>>()
+                    .ok_or_else(err)?;
                 let current_module = env.current_module.clone().unwrap_or_else(AbsName::root);
                 let mod_name = resolve_global_name(
                     mod_name,
@@ -482,7 +454,7 @@ fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast,
             Some([params, bodies @ .., expr]) => {
                 let (param_names, rest_name) = params.collect_improper(|v| match v {
                     Value::Sym(name) => {
-                        let name = SimpleName::from(&**name)
+                        let name = SimpleName::parse(&**name)
                             .ok_or_else(|| EvalError::IllegalArgument(cdr.clone()))?;
                         Ok(name)
                     }
@@ -495,12 +467,6 @@ fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast,
                     .collect::<Result<Rc<[Ast]>, EvalError>>()?;
                 let expr = Rc::new(build_ast(expr, &body_env)?);
                 let depth = body_env.local_depth;
-                // TODO
-                let param_names = param_names
-                    .iter()
-                    .map(|p| Rc::from(p.as_ref()))
-                    .collect::<Vec<_>>();
-                let rest_name = rest_name.map(|n| Rc::from(n.as_ref()));
                 Ok(Ast::Lambda {
                     param_names,
                     rest_name,
@@ -573,11 +539,6 @@ fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast,
             let capture_size = capture_names.len();
             let th_env = env.extended(capture_names.clone(), None);
             let th = build_ast(&th, &th_env)?;
-            // TODO
-            let capture_names = capture_names
-                .into_iter()
-                .map(|n| Rc::from(n.as_ref()))
-                .collect::<Vec<_>>();
             let th = Ast::Lambda {
                 param_names: capture_names,
                 rest_name: None,
@@ -612,8 +573,8 @@ fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast,
 fn build_pattern(pat: &Value, env: &mut Vec<SimpleName>) -> Result<MatchPattern, EvalError> {
     match pat {
         Value::Sym(name) => {
-            // TODO: more informative error
-            let name = SimpleName::from(&**name).ok_or(EvalError::SymbolRequired)?;
+            // TODO: more informative error(make EvalError::SimpleNameRequired)
+            let name = SimpleName::parse(&**name).ok_or(EvalError::SymbolRequired)?;
             if name.as_ref() == "_" {
                 Ok(MatchPattern::Any)
             } else if let Some(index) = env.iter().position(|n| n == &name) {
@@ -706,24 +667,17 @@ fn extract_rec_lambda_defs<'a, 'b, E: Fn() -> EvalError + Copy>(
     raw: impl IntoIterator<Item = &'a Value>,
     env: &'b StaticEnv,
     err: E,
-) -> Result<(StaticEnv<'b>, Vec<(Rc<str>, LambdaDef)>), EvalError> {
+) -> Result<(StaticEnv<'b>, Vec<(SimpleName, LambdaDef)>), EvalError> {
     let defs = raw
         .into_iter()
         .map(|raw| extract_raw_lambda_def(raw).ok_or_else(err))
         .collect::<Result<Vec<_>, _>>()?;
     // TODO: change extract_rec_lambda_defs signature to return SimpleName
-    let env = env.rec_extended(
-        defs.iter()
-            .map(|(name, ..)| SimpleName::from(&**name).unwrap()),
-    );
+    let env = env.rec_extended(defs.iter().map(|(name, ..)| name.clone()));
     let defs = defs
         .into_iter()
         .map(|(name, param_names, rest_name, bodies, expr)| {
-            // TODO
-            let simple_param_names = param_names.iter().map(|n| SimpleName::from(&**n).unwrap());
-            // TODO
-            let simple_rest_name = rest_name.clone().map(|n| SimpleName::from(&*n).unwrap());
-            let env = env.extended(simple_param_names, simple_rest_name);
+            let env = env.extended(param_names.clone(), rest_name.clone());
             let bodies = bodies
                 .into_iter()
                 .map(|b| build_ast(&b, &env))
@@ -745,10 +699,17 @@ fn extract_rec_lambda_defs<'a, 'b, E: Fn() -> EvalError + Copy>(
     Ok((env, defs))
 }
 
+/// returns `(name, param_names, rest_name, bodies, expr)`
 #[allow(clippy::type_complexity)]
 fn extract_raw_lambda_def(
     raw: &Value,
-) -> Option<(Rc<str>, Vec<Rc<str>>, Option<Rc<str>>, Vec<Value>, Value)> {
+) -> Option<(
+    SimpleName,
+    Vec<SimpleName>,
+    Option<SimpleName>,
+    Vec<Value>,
+    Value,
+)> {
     let (names, bodies) = raw.to_cons()?;
     let (name, param_names, rest_name) = extract_lambda_names(&names)?;
     let mut bodies = bodies.to_vec()?;
@@ -757,18 +718,18 @@ fn extract_raw_lambda_def(
 }
 
 #[allow(clippy::type_complexity)]
-fn extract_lambda_names(expr: &Value) -> Option<(Rc<str>, Vec<Rc<str>>, Option<Rc<str>>)> {
+fn extract_lambda_names(expr: &Value) -> Option<(SimpleName, Vec<SimpleName>, Option<SimpleName>)> {
     let (name, params) = expr.to_cons()?;
-    let name = name.as_sym().cloned()?;
+    let name = name.to_simple_name()?;
     let (param_names, rest_name) = params.to_improper_vec();
     let param_names = param_names
         .iter()
-        .map(|pn| pn.as_sym().cloned())
+        .map(|pn| pn.to_simple_name())
         .collect::<Option<Vec<_>>>()?;
     let rest_name = if rest_name == Value::nil() {
         None
     } else {
-        Some(rest_name.as_sym().cloned()?)
+        Some(rest_name.to_simple_name()?)
     };
     Some((name, param_names, rest_name))
 }
@@ -812,17 +773,11 @@ fn build_ast_set_global(expr: &Value, env: &StaticEnv) -> Result<Ast, EvalError>
         let name = match name {
             Name::Single(name) => {
                 let current_module = env.current_module.clone().unwrap_or_else(AbsName::global);
-                // TODO
-                let name = SimpleName::from(name).unwrap();
                 current_module.into_member_name(name)
             }
-            Name::Absolute(mname, name) => {
-                // TODO
-                let name = SimpleName::from(name).unwrap();
-                mname.member_name(name)
-            }
+            Name::Absolute(full_name) => full_name,
             Name::Relative(_, name) => {
-                return Err(EvalError::VariableNotFound(name));
+                return Err(EvalError::VariableNotFound(name.to_string()));
             }
         };
         let err = || EvalError::VariableNotFound(name.to_string());
@@ -845,27 +800,24 @@ mod test {
 
     #[test]
     fn test_parse_name() {
-        assert_eq!(Name::parse("foo"), Some(Name::Single("foo".to_owned())));
+        assert_eq!(
+            Name::parse("foo"),
+            Some(Name::Single(SimpleName::parse_or_die("foo")))
+        );
         assert_eq!(
             Name::parse(":foo"),
-            Some(Name::Absolute(AbsName::root(), "foo".to_owned()))
+            Some(Name::Absolute(MemberName::parse(":foo").unwrap()))
         );
         assert_eq!(
             Name::parse("foo:bar"),
-            Some(Name::Relative("foo".to_owned(), "bar".to_owned()))
+            Some(Name::Relative(
+                vec![SimpleName::parse_or_die("foo")],
+                SimpleName::parse_or_die("bar")
+            ))
         );
         assert_eq!(
             Name::parse(":foo:bar:baz"),
-            // TODO
-            Some(Name::Absolute(
-                AbsName::new(
-                    ["foo", "bar"]
-                        .iter()
-                        .map(|&n| SimpleName::from(n).unwrap())
-                        .collect::<Vec<_>>()
-                ),
-                "baz".to_owned()
-            ))
+            Some(Name::Absolute(MemberName::parse_or_die(":foo:bar:baz")))
         );
         assert_eq!(Name::parse(""), None);
         assert_eq!(Name::parse(":"), None);

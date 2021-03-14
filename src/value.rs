@@ -2,6 +2,7 @@ use crate::ast::Ast;
 use crate::error::EvalError;
 use crate::eval::EvalResult;
 use crate::local_env::LocalEnv;
+use crate::name::SimpleName;
 use crate::GlobalEnv;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -26,9 +27,10 @@ impl std::fmt::Debug for Value {
 #[derive(Debug, PartialEq, Eq)]
 pub enum RefValue {
     Cons(RefCell<Value>, RefCell<Value>),
+    // TODO: use LambdaDef
     Lambda {
-        param_names: Vec<Rc<str>>,
-        rest_name: Option<Rc<str>>,
+        param_names: Vec<SimpleName>,
+        rest_name: Option<SimpleName>,
         bodies: Rc<[Ast]>,
         expr: Rc<Ast>,
         env: Rc<LocalEnv>,
@@ -49,8 +51,8 @@ pub enum RefValue {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LambdaDef {
-    pub param_names: Vec<Rc<str>>,
-    pub rest_name: Option<Rc<str>>,
+    pub param_names: Vec<SimpleName>,
+    pub rest_name: Option<SimpleName>,
     pub bodies: Rc<[Ast]>,
     pub expr: Rc<Ast>,
 }
@@ -250,6 +252,9 @@ impl Value {
             Value::Str(value) => Some(value),
             _ => None,
         }
+    }
+    pub fn to_simple_name(&self) -> Option<SimpleName> {
+        self.as_sym().and_then(|s| SimpleName::parse(&**s))
     }
     pub fn to_list1(&self) -> Option<Value> {
         let (car, cdr) = self.to_cons()?;
@@ -461,14 +466,14 @@ impl std::fmt::Display for RefValue {
                 if let Some((last_param, param_names)) = param_names.split_last() {
                     fmt.write_str(" ")?;
                     for p in param_names {
-                        fmt.write_str(p)?;
+                        p.fmt(fmt)?;
                         fmt.write_str(" ")?;
                     }
-                    fmt.write_str(last_param)?;
+                    last_param.fmt(fmt)?;
                 }
                 for r in rest_name {
                     fmt.write_str(" . ")?;
-                    fmt.write_str(r)?;
+                    r.fmt(fmt)?;
                 }
                 fmt.write_str(">")
             }
@@ -477,14 +482,14 @@ impl std::fmt::Display for RefValue {
                 if let Some((last_param, param_names)) = lambda_def.param_names.split_last() {
                     fmt.write_str(" ")?;
                     for p in param_names {
-                        fmt.write_str(p)?;
+                        p.fmt(fmt)?;
                         fmt.write_str(" ")?;
                     }
-                    fmt.write_str(last_param)?;
+                    last_param.fmt(fmt)?;
                 }
                 for r in &lambda_def.rest_name {
                     fmt.write_str(" . ")?;
-                    fmt.write_str(r)?;
+                    r.fmt(fmt)?;
                 }
                 fmt.write_str(">")
             }
@@ -593,8 +598,8 @@ mod test {
         assert_eq!(list![list![1, 2], 3].to_string(), "((1 2) 3)");
         assert_eq!(
             Value::ref_value(RefValue::Lambda {
-                param_names: vec![Rc::from("x")],
-                rest_name: Some(Rc::from("rest")),
+                param_names: vec![SimpleName::parse_or_die("x")],
+                rest_name: Some(SimpleName::parse_or_die("rest")),
                 bodies: Vec::<Ast>::new().into_iter().collect::<Rc<[Ast]>>(),
                 expr: Rc::new(Ast::Const(Value::nil())),
                 env: Rc::new(LocalEnv::any()),

@@ -58,9 +58,9 @@ pub fn eval_top_ast<'v, 'g>(top: &'v TopAst, global: &mut impl GlobalWrite<'g>) 
             Ok(Value::nil())
         }
         TopAst::DefModule(module_name) => {
-            if let Some((parent_name, name)) = module_name.clone().split() {
+            if let Some(member_name) = module_name.clone().try_into_member_name() {
                 global
-                    .define_module_member(parent_name, name)
+                    .define_module_member(member_name.module_name, member_name.simple_name)
                     .map(|_| Value::Nil)
                     .ok_or_else(|| EvalError::ReadOnly(module_name.to_string()))
             } else {
@@ -363,16 +363,8 @@ mod test {
         eval_str("1", &mut env).should_ok(1);
     }
 
-    // TODO: MemberName::parse
     fn member_name(src: &str) -> crate::name::MemberName {
-        crate::name::AbsName::new(
-            src.split(':').collect::<Vec<_>>()[1..]
-                .iter()
-                .map(|&n| crate::name::SimpleName::from(n).unwrap())
-                .collect::<Vec<_>>(),
-        )
-        .try_into_member_name()
-        .unwrap()
+        crate::name::MemberName::parse_or_die(src)
     }
 
     #[test]

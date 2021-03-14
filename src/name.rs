@@ -5,10 +5,18 @@ impl AbsName {
         AbsName(parts.into())
     }
     pub fn global() -> AbsName {
-        AbsName(vec![SimpleName::from("global").unwrap()])
+        AbsName(vec![SimpleName::parse_or_die("global")])
     }
     pub fn root() -> AbsName {
         AbsName(vec![])
+    }
+    pub fn parse(s: &str) -> Option<AbsName> {
+        let (parts, is_abs) = SimpleName::split(s)?;
+        if !is_abs {
+            None
+        } else {
+            Some(Self::new(parts))
+        }
     }
 
     pub fn member_name(&self, name: SimpleName) -> MemberName {
@@ -24,10 +32,7 @@ impl AbsName {
     }
 
     pub fn member_name_or_die(&self, name: &str) -> MemberName {
-        let name = SimpleName::from(name).unwrap_or_else(|| {
-            panic!("Not a simple name: {}", name);
-        });
-        self.member_name(name)
+        self.member_name(SimpleName::parse_or_die(name))
     }
 
     pub fn into_child_name(mut self, name: SimpleName) -> AbsName {
@@ -36,11 +41,7 @@ impl AbsName {
     }
 
     pub fn into_child_name_or_die(self, name: &str) -> AbsName {
-        // TODO: SimpleName::parse_or_die
-        let name = SimpleName::from(name).unwrap_or_else(|| {
-            panic!("Not a simple name: {}", name);
-        });
-        self.into_child_name(name)
+        self.into_child_name(SimpleName::parse_or_die(name))
     }
 
     pub fn into_descendant_name(mut self, names: impl IntoIterator<Item = SimpleName>) -> AbsName {
@@ -56,9 +57,6 @@ impl AbsName {
             v.push(name);
         }
         AbsName(v)
-    }
-    pub fn split(mut self) -> Option<(AbsName, SimpleName)> {
-        self.0.pop().map(|n| (self, n))
     }
 }
 impl std::fmt::Display for AbsName {
@@ -76,11 +74,39 @@ impl std::fmt::Display for AbsName {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct SimpleName(String);
 impl SimpleName {
-    pub fn from<S: Into<String> + AsRef<str>>(s: S) -> Option<SimpleName> {
+    pub unsafe fn new_unchecked<S: Into<String>>(s: S) -> SimpleName {
+        SimpleName(s.into())
+    }
+    pub fn parse<S: Into<String> + AsRef<str>>(s: S) -> Option<SimpleName> {
         if s.as_ref().chars().any(|c| c == ':') {
             None
         } else {
             Some(SimpleName(s.into()))
+        }
+    }
+    pub fn parse_or_die(s: &str) -> SimpleName {
+        Self::parse(s).unwrap_or_else(|| {
+            panic!("Not a simple name: {}", s);
+        })
+    }
+    /// `SimpleName::split("")` and `SimpleName::split(":")` will return None.
+    /// Note: Empty vector is never returned.
+    pub fn split(s: &str) -> Option<(Vec<SimpleName>, bool)> {
+        let parts = s.split(':').collect::<Vec<_>>();
+        if parts.is_empty() || parts[1..].iter().any(|p| p.is_empty()) {
+            None
+        } else {
+            let is_abs = parts[0].is_empty();
+            let make_simple_name = |s: &str| unsafe { SimpleName::new_unchecked(s.to_owned()) };
+            let parts = if is_abs {
+                parts[1..]
+                    .iter()
+                    .map(|&p| make_simple_name(p))
+                    .collect::<Vec<_>>()
+            } else {
+                parts.into_iter().map(make_simple_name).collect::<Vec<_>>()
+            };
+            Some((parts, is_abs))
         }
     }
 }
@@ -107,6 +133,12 @@ impl MemberName {
             module_name,
             simple_name,
         }
+    }
+    pub fn parse(s: &str) -> Option<MemberName> {
+        AbsName::parse(s).and_then(|n| n.try_into_member_name())
+    }
+    pub fn parse_or_die(s: &str) -> MemberName {
+        Self::parse(s).unwrap_or_else(|| panic!("Not a member name: {}", s))
     }
     pub fn to_abs_name(&self) -> AbsName {
         self.clone().into_abs_name()

@@ -59,8 +59,8 @@ pub enum Ast {
     GetArgument(String, usize),
     If(Box<Ast>, Box<Ast>, Box<Ast>),
     Lambda {
-        param_names: Vec<Rc<str>>,
-        rest_name: Option<Rc<str>>,
+        param_names: Vec<SimpleName>,
+        rest_name: Option<SimpleName>,
         bodies: Rc<[Ast]>,
         expr: Rc<Ast>,
         depth: usize,
@@ -101,18 +101,18 @@ pub enum Ast {
 }
 
 fn lambda_to_value(
-    param_names: &[Rc<str>],
-    rest_name: &Option<Rc<str>>,
+    param_names: &[SimpleName],
+    rest_name: &Option<SimpleName>,
     bodies: &[Ast],
     expr: &Ast,
 ) -> Value {
     let rest_name = rest_name
         .clone()
-        .map(|n| Value::sym(&*n))
+        .map(|n| Value::sym(n.as_ref()))
         .unwrap_or(Value::Nil);
     let params = param_names
         .iter()
-        .map(|n| Value::sym(n))
+        .map(|n| Value::sym(n.as_ref()))
         .rev()
         .fold(rest_name, |a, x| Value::cons(x, a));
     let body = bodies
