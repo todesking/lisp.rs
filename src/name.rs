@@ -155,3 +155,28 @@ impl std::fmt::Display for MemberName {
         self.simple_name.fmt(fmt)
     }
 }
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Name {
+    Single(SimpleName),
+    Relative(Vec<SimpleName>, SimpleName),
+    Absolute(MemberName),
+}
+impl Name {
+    pub fn parse(name: &str) -> Option<Name> {
+        let (parts, is_abs) = SimpleName::split(name)?;
+        if is_abs {
+            AbsName::new(parts)
+                .try_into_member_name()
+                .map(Name::Absolute)
+        } else if parts.len() == 1 {
+            Some(Name::Single(parts[0].clone()))
+        } else {
+            assert!(parts.len() > 1);
+            let mut parts = parts;
+            let last = parts.pop().unwrap_or_else(|| unreachable!());
+            let prefix = parts;
+            Some(Name::Relative(prefix, last))
+        }
+    }
+}

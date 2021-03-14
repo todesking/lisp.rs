@@ -4,6 +4,7 @@ use crate::ast::QuasiQuote;
 use crate::ast::VarRef;
 use crate::name::AbsName;
 use crate::name::MemberName;
+use crate::name::Name;
 use crate::name::SimpleName;
 use crate::value::LambdaDef;
 use crate::value::RefValue;
@@ -124,32 +125,6 @@ impl<'a> StaticEnv<'a> {
     }
     fn has_module(&self, mname: &AbsName) -> bool {
         self.module_members.contains_key(mname)
-    }
-}
-
-// TODO: Move to module name
-#[derive(Debug, PartialEq, Eq)]
-enum Name {
-    Single(SimpleName),
-    Relative(Vec<SimpleName>, SimpleName),
-    Absolute(MemberName),
-}
-impl Name {
-    fn parse(name: &str) -> Option<Name> {
-        let (parts, is_abs) = SimpleName::split(name)?;
-        if is_abs {
-            AbsName::new(parts)
-                .try_into_member_name()
-                .map(Name::Absolute)
-        } else if parts.len() == 1 {
-            Some(Name::Single(parts[0].clone()))
-        } else {
-            assert!(parts.len() > 1);
-            let mut parts = parts;
-            let last = parts.pop().unwrap_or_else(|| unreachable!());
-            let prefix = parts;
-            Some(Name::Relative(prefix, last))
-        }
     }
 }
 
