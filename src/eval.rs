@@ -362,11 +362,11 @@ mod test {
     }
 
     // TODO
-    fn abs_name(src: &str) -> crate::ast::AbsName {
-        crate::ast::AbsName::new(
+    fn abs_name(src: &str) -> crate::name::AbsName {
+        crate::name::AbsName::new(
             src.split(':').collect::<Vec<_>>()[1..]
                 .iter()
-                .map(|&n| crate::ast::SimpleName::from(n).unwrap())
+                .map(|&n| crate::name::SimpleName::from(n).unwrap())
                 .collect::<Vec<_>>(),
         )
     }

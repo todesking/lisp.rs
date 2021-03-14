@@ -1,9 +1,9 @@
-use crate::ast::AbsName;
 use crate::ast::Ast;
 use crate::ast::MatchPattern;
 use crate::ast::QuasiQuote;
-use crate::ast::SimpleName;
 use crate::ast::VarRef;
+use crate::name::AbsName;
+use crate::name::SimpleName;
 use crate::value::LambdaDef;
 use crate::value::RefValue;
 use crate::EvalError;
@@ -203,9 +203,7 @@ fn resolve_global_name(
                 return None;
             }
             if let Some(prefix) = imports.get(&parts[0]) {
-                Some(
-                    prefix.relative_name(parts[1..].to_vec()).child_name(&name)
-                )
+                Some(prefix.relative_name(parts[1..].to_vec()).child_name(&name))
             } else {
                 let root = current_module.clone().unwrap_or_else(AbsName::root);
                 let abs_name = root.relative_name(parts).child_name(&name);

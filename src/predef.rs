@@ -7,7 +7,7 @@ use crate::Value;
 use std::rc::Rc;
 
 pub fn load_predef(global: &mut GlobalEnv) {
-    let ns_global = crate::ast::AbsName::root().child_name_or_die("global");
+    let ns_global = crate::name::AbsName::root().child_name_or_die("global");
 
     global.set_fun2(ns_global.child_name_or_die("eq?"), |lhs, rhs| {
         Ok(Value::bool(lhs == rhs))
@@ -70,7 +70,7 @@ pub fn load_predef(global: &mut GlobalEnv) {
 }
 
 fn load_arithmetic(global: &mut GlobalEnv) {
-    let ns_global = crate::ast::AbsName::root().child_name_or_die("global");
+    let ns_global = crate::name::AbsName::root().child_name_or_die("global");
     global.set(
         ns_global.child_name_or_die("+"),
         Value::fun_reduce("+", |l: i32, r: i32| l + r),
@@ -124,7 +124,7 @@ fn load_arithmetic(global: &mut GlobalEnv) {
 }
 
 fn load_list_ops(global: &mut GlobalEnv) {
-    let ns_global = crate::ast::AbsName::root().child_name_or_die("global");
+    let ns_global = crate::name::AbsName::root().child_name_or_die("global");
 
     global.set_fun2(ns_global.child_name_or_die("set-car!"), |x, v| {
         x.set_car(v.clone(), true)

@@ -6,6 +6,7 @@ mod error;
 mod eval;
 mod global_env;
 mod local_env;
+mod name;
 mod parser;
 mod predef;
 

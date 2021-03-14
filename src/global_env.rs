@@ -1,5 +1,5 @@
-use crate::ast::AbsName;
-use crate::ast::SimpleName;
+use crate::name::AbsName;
+use crate::name::SimpleName;
 use crate::EvalError;
 use crate::Value;
 
