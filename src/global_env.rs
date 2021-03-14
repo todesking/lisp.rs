@@ -1,3 +1,5 @@
+use crate::ast::AbsName;
+use crate::ast::SimpleName;
 use crate::EvalError;
 use crate::Value;
 
@@ -6,13 +8,11 @@ use std::collections::HashSet;
 
 #[derive(Debug, Default)]
 pub struct GlobalEnv {
-    ids: HashMap<String, usize>,
+    ids: HashMap<AbsName, usize>,
     values: Vec<Value>,
-    macros: HashMap<String, Value>,
-    /// simple name -> absolute name
-    imports: HashMap<String, String>,
-    /// parent module absolute name -> child module simple name
-    modules: HashMap<String, HashSet<String>>,
+    macros: HashMap<AbsName, Value>,
+    imports: HashMap<SimpleName, AbsName>,
+    module_members: HashMap<AbsName, HashSet<SimpleName>>,
 }
 
 pub struct ReadOnly<'a>(&'a GlobalEnv);
@@ -21,16 +21,16 @@ pub trait GlobalWrite<'a>: AsRef<GlobalEnv> {
     fn set_by_id(&mut self, _id: usize, _value: Value) -> Option<()> {
         None
     }
-    fn set<T: Into<String>>(&mut self, _key: T, _value: Value) -> Option<()> {
+    fn set(&mut self, _key: AbsName, _value: Value) -> Option<()> {
         None
     }
-    fn set_macro<T: Into<String>>(&mut self, _key: T, _value: Value) -> Option<()> {
+    fn set_macro(&mut self, _key: AbsName, _value: Value) -> Option<()> {
         None
     }
-    fn define_module_member(&mut self, _mname: String, _name: String) -> Option<()> {
+    fn define_module_member(&mut self, _mname: AbsName, _name: SimpleName) -> Option<()> {
         Some(())
     }
-    fn import(&mut self, _name: &str, _absname: &str) -> Option<()> {
+    fn import(&mut self, _name: SimpleName, _absname: AbsName) -> Option<()> {
         Some(())
     }
 }
@@ -51,23 +51,23 @@ impl<'a> GlobalWrite<'a> for GlobalEnv {
         GlobalEnv::set_by_id(self, id, value);
         Some(())
     }
-    fn set<T: Into<String>>(&mut self, key: T, value: Value) -> Option<()> {
+    fn set(&mut self, key: AbsName, value: Value) -> Option<()> {
         GlobalEnv::set(self, key, value);
         Some(())
     }
-    fn set_macro<T: Into<String>>(&mut self, key: T, value: Value) -> Option<()> {
+    fn set_macro(&mut self, key: AbsName, value: Value) -> Option<()> {
         GlobalEnv::set_macro(self, key, value);
         Some(())
     }
-    fn define_module_member(&mut self, mname: String, name: String) -> Option<()> {
-        self.modules
+    fn define_module_member(&mut self, mname: AbsName, name: SimpleName) -> Option<()> {
+        self.module_members
             .entry(mname)
             .or_insert_with(HashSet::new)
             .insert(name);
         Some(())
     }
-    fn import(&mut self, name: &str, absname: &str) -> Option<()> {
-        self.imports.insert(name.to_owned(), absname.to_owned());
+    fn import(&mut self, name: SimpleName, absname: AbsName) -> Option<()> {
+        self.imports.insert(name, absname);
         Some(())
     }
 }
@@ -79,23 +79,23 @@ impl GlobalEnv {
     pub fn read_only(&self) -> ReadOnly {
         ReadOnly(self)
     }
-    pub fn lookup_global_id(&self, name: &str) -> Option<usize> {
+    pub fn lookup_global_id(&self, name: &AbsName) -> Option<usize> {
         self.ids.get(name).copied()
     }
-    pub fn lookup<T: AsRef<str>>(&self, key: &T) -> Option<&Value> {
-        self.lookup_global_id(key.as_ref()).map(|i| &self.values[i])
+    pub fn lookup(&self, key: &AbsName) -> Option<&Value> {
+        self.lookup_global_id(key).map(|i| &self.values[i])
     }
-    pub fn lookup_macro(&self, key: &str) -> Option<&Value> {
+    pub fn lookup_macro(&self, key: &AbsName) -> Option<&Value> {
         self.macros.get(key)
     }
     pub fn next_id(&self) -> usize {
         self.values.len()
     }
-    pub fn imports(&self) -> &HashMap<String, String> {
+    pub fn imports(&self) -> &HashMap<SimpleName, AbsName> {
         &self.imports
     }
-    pub fn modules(&self) -> &HashMap<String, HashSet<String>> {
-        &self.modules
+    pub fn module_members(&self) -> &HashMap<AbsName, HashSet<SimpleName>> {
+        &self.module_members
     }
 
     pub fn get(&self, id: usize) -> &Value {
@@ -104,8 +104,7 @@ impl GlobalEnv {
     pub fn set_by_id(&mut self, id: usize, value: Value) {
         self.values[id] = value;
     }
-    pub fn set<T: Into<String>>(&mut self, key: T, value: Value) {
-        let key = key.into();
+    pub fn set(&mut self, key: AbsName, value: Value) {
         if let Some(id) = self.lookup_global_id(&key) {
             self.values[id] = value;
         } else {
@@ -113,17 +112,17 @@ impl GlobalEnv {
             self.ids.insert(key, self.values.len() - 1);
         }
     }
-    pub fn set_macro<T: Into<String>>(&mut self, key: T, value: Value) {
-        self.macros.insert(key.into(), value);
+    pub fn set_macro(&mut self, key: AbsName, value: Value) {
+        self.macros.insert(key, value);
     }
-    pub fn set_fun<F>(&mut self, name: &str, f: F)
+    pub fn set_fun<F>(&mut self, name: AbsName, f: F)
     where
         F: Fn(&[Value]) -> Result<Value, EvalError> + 'static,
     {
-        let value = Value::fun(name, f);
-        self.set(name.to_string(), value);
+        let value = Value::fun(&name.to_string(), f);
+        self.set(name, value);
     }
-    pub fn set_fun1<F>(&mut self, name: &str, f: F)
+    pub fn set_fun1<F>(&mut self, name: AbsName, f: F)
     where
         F: Fn(&Value) -> Result<Value, EvalError> + 'static,
     {
@@ -135,7 +134,7 @@ impl GlobalEnv {
             }
         })
     }
-    pub fn set_fun2<F>(&mut self, name: &str, f: F)
+    pub fn set_fun2<F>(&mut self, name: AbsName, f: F)
     where
         F: Fn(&Value, &Value) -> Result<Value, EvalError> + 'static,
     {
@@ -147,17 +146,17 @@ impl GlobalEnv {
             }
         })
     }
-    pub fn set_global_fun<F>(&mut self, name: &str, f: F)
+    pub fn set_global_fun<F>(&mut self, name: AbsName, f: F)
     where
         F: Fn(&[Value], &GlobalEnv) -> Result<Value, EvalError> + 'static,
     {
-        let value = Value::global_fun(name, f);
-        self.set(name.to_owned(), value);
+        let value = Value::global_fun(&name.to_string(), f);
+        self.set(name, value);
     }
-    pub fn ls(&self) -> impl Iterator<Item = &str> {
-        self.ids.keys().map(|s| s.as_ref())
+    pub fn ls(&self) -> impl Iterator<Item = &AbsName> {
+        self.ids.keys()
     }
-    pub fn ls_macro(&self) -> impl Iterator<Item = &str> {
-        self.macros.keys().map(|s| s.as_ref())
+    pub fn ls_macro(&self) -> impl Iterator<Item = &AbsName> {
+        self.macros.keys()
     }
 }

@@ -6,16 +6,13 @@ use std::rc::Rc;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TopAst {
-    /// (module abs-name, short name, ast)
-    Define(String, String, Ast),
-    DefMacro(String, String, Ast),
-    /// (abs parent module name, simple module name)
-    DefModule(String, String),
-    /// (simple name, abs name)
-    Import(String, String),
+    Define(AbsName, Ast),
+    DefMacro(AbsName, Ast),
+    DefModule(AbsName),
+    Import(SimpleName, AbsName),
     Expr(Ast),
     Begin(Vec<TopAst>),
-    Delay(Option<ModName>, Value),
+    Delay(Option<AbsName>, Value),
 }
 impl TopAst {
     // Note: this is for debugging purporse only.
@@ -26,19 +23,18 @@ impl TopAst {
                 let asts = asts.iter().map(|x| x.to_value()).collect::<Vec<_>>();
                 list!["begin"; Value::list(asts.iter())]
             }
-            TopAst::Define(module_name, name, ast) => {
-                let mut abs_name = module_name.to_string();
-                abs_name.push(':');
-                abs_name.push_str(name);
-                list!["__define", &abs_name, ast.to_value()]
+            TopAst::Define(name, ast) => {
+                list!["__define", &name.to_string(), ast.to_value()]
             }
-            TopAst::DefMacro(mname, name, ast) => {
-                list!["__defmacro", mname, name, ast.to_value()]
+            TopAst::DefMacro(name, ast) => {
+                list!["__defmacro", &name.to_string(), ast.to_value()]
             }
-            TopAst::DefModule(mname, name) => {
-                list!["define-module", mname, name]
+            TopAst::DefModule(name) => {
+                list!["define-module", &name.to_string()]
             }
-            TopAst::Import(name, absname) => list!["import-name", name, absname],
+            TopAst::Import(name, absname) => {
+                list!["import-name", name.as_ref(), &absname.to_string()]
+            }
             TopAst::Expr(ast) => ast.to_value(),
             TopAst::Delay(mname, value) => list![
                 "<delay>",
@@ -52,55 +48,79 @@ impl TopAst {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ModName {
-    Root,
-    Child(Box<ModName>, String),
-}
-impl ModName {
-    pub fn make(parts: &[&str]) -> ModName {
-        ModName::Root.make_relative(parts)
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct AbsName(Vec<SimpleName>);
+impl AbsName {
+    pub fn new(parts: impl Into<Vec<SimpleName>>) -> AbsName {
+        AbsName(parts.into())
     }
-    pub fn make_relative(self, parts: &[&str]) -> ModName {
-        parts
-            .iter()
-            .fold(self, |a, x| ModName::Child(a.into(), x.to_string()))
+    pub fn global() -> AbsName {
+        AbsName(vec![SimpleName::from("global").unwrap()])
     }
-    pub fn global() -> ModName {
-        Self::make(&["global"])
+    pub fn root() -> AbsName {
+        AbsName(vec![])
     }
-    pub fn abs_name(&self, name: &str) -> String {
-        let mut buf = String::new();
-        self.to_string_impl(&mut buf);
-        buf.push(':');
-        buf.push_str(name);
-        buf
+
+    // TODO: Make name: SimpleName
+    pub fn child_name(&self, name: &SimpleName) -> AbsName {
+        let mut abs_name = self.clone();
+        abs_name.0.push(name.clone());
+        abs_name
     }
-    fn to_string_impl(&self, buf: &mut String) {
-        match self {
-            ModName::Root => {}
-            ModName::Child(parent, name) => {
-                parent.to_string_impl(buf);
-                buf.push(':');
-                buf.push_str(name);
-            }
+
+    pub fn child_name_or_die(&self, name: &str) -> AbsName {
+        let name = SimpleName::from(name).unwrap();
+        self.child_name(&name)
+    }
+
+    pub fn relative_name(&self, names: impl IntoIterator<Item = SimpleName>) -> AbsName {
+        let mut v = self.0.clone();
+        for name in names {
+            v.push(name);
         }
+        AbsName(v)
     }
-    pub fn as_child(&self) -> Option<(&ModName, &String)> {
-        match self {
-            ModName::Root => None,
-            ModName::Child(parent, name) => Some((parent, name)),
-        }
-    }
-    pub fn child_module(&self, name: &str) -> ModName {
-        ModName::Child(self.clone().into(), name.to_string())
+
+    // TODO: remove this
+    pub fn split(&self) -> (AbsName, SimpleName) {
+        let last = self.0.last().unwrap().clone();
+        let mut heads = self.0.clone();
+        heads.pop();
+        (AbsName(heads), last)
     }
 }
-impl std::fmt::Display for ModName {
+impl std::fmt::Display for AbsName {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        let mut buf = String::new();
-        self.to_string_impl(&mut buf);
-        fmt.write_str(&buf)
+        use std::fmt::Write;
+        for part in &self.0 {
+            fmt.write_char(':')?;
+            part.fmt(fmt)?;
+        }
+        Ok(())
+    }
+}
+
+// TODO: Use Rc<str>
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct SimpleName(String);
+impl SimpleName {
+    pub fn from<S: Into<String> + AsRef<str>>(s: S) -> Option<SimpleName> {
+        if s.as_ref().chars().any(|c| c == ':') {
+            None
+        } else {
+            Some(SimpleName(s.into()))
+        }
+    }
+}
+impl AsRef<str> for SimpleName {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+impl std::fmt::Display for SimpleName {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        fmt.write_str(&self.0)?;
+        Ok(())
     }
 }
 
@@ -251,9 +271,9 @@ impl Ast {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MatchPattern {
     Const(Value),
-    Capture(String, usize),
+    Capture(SimpleName, usize),
     Cons(Box<MatchPattern>, Box<MatchPattern>),
-    SameAs(String, usize),
+    SameAs(SimpleName, usize),
     Any,
 }
 impl MatchPattern {
@@ -280,8 +300,8 @@ impl MatchPattern {
         match self {
             MatchPattern::Any => Value::sym("_"),
             MatchPattern::Const(v) => Ast::Const(v.clone()).to_value(),
-            MatchPattern::Capture(name, _) => Value::sym(name),
-            MatchPattern::SameAs(name, _) => Value::sym(name),
+            MatchPattern::Capture(name, _) => Value::sym(name.as_ref()),
+            MatchPattern::SameAs(name, _) => Value::sym(name.as_ref()),
             MatchPattern::Cons(car, cdr) => list![car.to_value(); cdr.to_value()],
         }
     }

@@ -113,6 +113,7 @@ impl Value {
     pub fn str(name: &str) -> Value {
         Value::Str(Rc::from(name))
     }
+    // TODO: name: impl Into<String> or something
     pub fn fun<F>(name: &str, f: F) -> Value
     where
         F: for<'a> Fn(&'a [Value]) -> EvalResult + 'static,
