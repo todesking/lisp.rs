@@ -430,7 +430,7 @@ mod test {
         eval_str("(lambda (x))", &mut env)
             .should_error(EvalError::IllegalArgument(list![list![Value::sym("x")]]));
 
-        eval_str("(lambda 1 1)", &mut env).should_error(EvalError::SymbolRequired);
+        eval_str("(lambda 1 1)", &mut env).should_error(EvalError::IllegalArgument(list![1, 1]));
     }
     #[test]
     fn test_lambda_simple() {

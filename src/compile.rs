@@ -115,15 +115,9 @@ fn build_top_ast_impl(expr: &Value, env: &mut StaticEnv) -> Result<TopAst, EvalE
                 let (mod_name, names) = cdr.to_cons().ok_or_else(err)?;
                 let mod_name = mod_name.as_sym().ok_or_else(err)?;
                 let names = names.to_vec().ok_or_else(err)?;
-                // TODO: use as_simple_name()
                 let names = names
                     .iter()
-                    .map(|n| n.as_sym())
-                    .collect::<Option<Vec<_>>>()
-                    .ok_or_else(err)?;
-                let names = names
-                    .into_iter()
-                    .map(|n| SimpleName::parse(&**n))
+                    .map(|n| n.to_simple_name())
                     .collect::<Option<Vec<_>>>()
                     .ok_or_else(err)?;
                 let current_module = env.current_module().clone().unwrap_or_else(AbsName::root);
@@ -248,13 +242,9 @@ fn build_ast_if(cdr: &Value, env: &StaticEnv) -> Result<Ast, EvalError> {
 fn build_ast_lambda(cdr: &Value, env: &StaticEnv) -> Result<Ast, EvalError> {
     match cdr.to_vec().as_deref() {
         Some([params, bodies @ .., expr]) => {
-            let (param_names, rest_name) = params.collect_improper(|v| match v {
-                Value::Sym(name) => {
-                    let name = SimpleName::parse(&**name)
-                        .ok_or_else(|| EvalError::IllegalArgument(cdr.clone()))?;
-                    Ok(name)
-                }
-                _ => Err(EvalError::SymbolRequired),
+            let (param_names, rest_name) = params.collect_improper(|v| {
+                v.to_simple_name()
+                    .ok_or_else(|| EvalError::IllegalArgument(cdr.clone()))
             })?;
             let body_env = env.extended(param_names.clone(), rest_name.clone());
             let bodies = bodies
