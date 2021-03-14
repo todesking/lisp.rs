@@ -36,9 +36,7 @@ pub fn eval_top_ast(top: &TopAst, global: &mut GlobalEnv) -> EvalResult {
             Ok(value)
         }
         TopAst::Define(full_name, value) => {
-            global
-                .define_module_member(full_name.module_name.clone(), full_name.simple_name.clone())
-                .ok_or_else(|| EvalError::ReadOnly(full_name.to_string()))?;
+            global.new_module_member(full_name.module_name.clone(), full_name.simple_name.clone());
             global.set(full_name.clone(), Value::nil());
             let value = eval_local_loop(value, global, &None, &args)?;
             global.set(full_name.clone(), value);
@@ -47,24 +45,19 @@ pub fn eval_top_ast(top: &TopAst, global: &mut GlobalEnv) -> EvalResult {
         TopAst::DefMacro(full_name, value) => {
             let value = eval_local_loop(value, global, &None, &args)?;
             global.set_macro(full_name.clone(), value);
-            global
-                .define_module_member(full_name.module_name.clone(), full_name.simple_name.clone());
+            global.new_module_member(full_name.module_name.clone(), full_name.simple_name.clone());
             Ok(Value::nil())
         }
         TopAst::DefModule(module_name) => {
             if let Some(member_name) = module_name.clone().try_into_member_name() {
-                global
-                    .define_module_member(member_name.module_name, member_name.simple_name)
-                    .map(|_| Value::Nil)
-                    .ok_or_else(|| EvalError::ReadOnly(module_name.to_string()))
-            } else {
-                Ok(Value::Nil)
+                global.new_module_member(member_name.module_name, member_name.simple_name);
             }
+            Ok(Value::Nil)
         }
-        TopAst::Import(name, absname) => global
-            .import(name.clone(), absname.clone())
-            .map(|_| Value::Nil)
-            .ok_or_else(|| EvalError::ReadOnly("import table".to_owned())),
+        TopAst::Import(name, absname) => {
+            global.import(name.clone(), absname.clone());
+            Ok(Value::Nil)
+        }
         TopAst::Expr(value) => eval_local_loop(&value, global, &None, &args),
         TopAst::Delay(current_module, value) => {
             let value = build_top_ast_within_module(value, global, current_module.clone())?;
@@ -177,7 +170,7 @@ fn eval_local<'g>(
         Ast::SetGlobal { id, value, name } => {
             let value = eval_local_loop(value, global, local, args)?;
             global
-                .set_by_id(*id, value)
+                .mutate(|global| global.set_by_id(*id, value))
                 .ok_or_else(|| EvalError::ReadOnly(name.to_owned()))?;
             Cont::ok_ret(Value::nil())
         }

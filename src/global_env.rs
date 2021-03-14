@@ -19,20 +19,9 @@ pub struct GlobalEnv {
 pub struct ReadOnly<'a>(&'a GlobalEnv);
 
 pub trait GlobalWrite<'a>: AsRef<GlobalEnv> {
-    fn set_by_id(&mut self, _id: usize, _value: Value) -> Option<()> {
+    #[must_use]
+    fn mutate<F: FnOnce(&mut GlobalEnv)>(&mut self, _f: F) -> Option<()> {
         None
-    }
-    fn set(&mut self, _key: MemberName, _value: Value) -> Option<()> {
-        None
-    }
-    fn set_macro(&mut self, _key: MemberName, _value: Value) -> Option<()> {
-        None
-    }
-    fn define_module_member(&mut self, _mname: AbsName, _name: SimpleName) -> Option<()> {
-        Some(())
-    }
-    fn import(&mut self, _name: SimpleName, _full_name: MemberName) -> Option<()> {
-        Some(())
     }
 }
 
@@ -48,27 +37,9 @@ impl AsRef<GlobalEnv> for GlobalEnv {
     }
 }
 impl<'a> GlobalWrite<'a> for GlobalEnv {
-    fn set_by_id(&mut self, id: usize, value: Value) -> Option<()> {
-        GlobalEnv::set_by_id(self, id, value);
-        Some(())
-    }
-    fn set(&mut self, key: MemberName, value: Value) -> Option<()> {
-        GlobalEnv::set(self, key, value);
-        Some(())
-    }
-    fn set_macro(&mut self, key: MemberName, value: Value) -> Option<()> {
-        GlobalEnv::set_macro(self, key, value);
-        Some(())
-    }
-    fn define_module_member(&mut self, mname: AbsName, name: SimpleName) -> Option<()> {
-        self.module_members
-            .entry(mname)
-            .or_insert_with(HashSet::new)
-            .insert(name);
-        Some(())
-    }
-    fn import(&mut self, name: SimpleName, absname: MemberName) -> Option<()> {
-        self.imports.insert(name, absname);
+    #[must_use]
+    fn mutate<F: FnOnce(&mut GlobalEnv)>(&mut self, f: F) -> Option<()> {
+        f(self);
         Some(())
     }
 }
@@ -99,6 +70,17 @@ impl GlobalEnv {
         &self.module_members
     }
 
+    pub fn new_module_member(&mut self, parent: AbsName, name: SimpleName) {
+        self.module_members
+            .entry(parent)
+            .or_insert_with(HashSet::new)
+            .insert(name);
+    }
+
+    pub fn import(&mut self, name: SimpleName, full_name: MemberName) {
+        self.imports.insert(name, full_name);
+    }
+
     pub fn get(&self, id: usize) -> &Value {
         &self.values[id]
     }
@@ -109,6 +91,7 @@ impl GlobalEnv {
         if let Some(id) = self.lookup_global_id(&key) {
             self.values[id] = value;
         } else {
+            self.new_module_member(key.module_name.clone(), key.simple_name.clone());
             self.values.push(value);
             self.ids.insert(key, self.values.len() - 1);
         }
