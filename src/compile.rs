@@ -20,7 +20,6 @@ use std::rc::Rc;
 struct StaticEnv<'a> {
     global: &'a GlobalEnv,
     locals: HashMap<SimpleName, VarRef>,
-    // TODO: back to new_global: Option<(AbsName, usize)>
     new_globals: HashMap<MemberName, usize>,
     local_depth: usize,
     args: Vec<SimpleName>,
@@ -54,7 +53,6 @@ impl<'a> StaticEnv<'a> {
         }
     }
     fn lookup(&self, name: &str) -> Option<VarRef> {
-        // TODO: import
         SimpleName::parse(name)
             .and_then(|name| self.locals.get(&name).cloned())
             .or_else(|| {
@@ -281,30 +279,24 @@ fn build_top_ast_impl(expr: &Value, env: &mut StaticEnv) -> Result<TopAst, EvalE
             }
             Some(deftype @ "__define") | Some(deftype @ "__defmacro") => {
                 if let Some((name, value)) = cdr.to_list2() {
-                    match name {
-                        Value::Sym(name) => {
-                            let current_module =
-                                env.current_module.clone().unwrap_or_else(AbsName::global);
-                            // TODO
-                            let name = SimpleName::parse(&*name)
-                                .ok_or_else(|| EvalError::IllegalArgument(cdr.clone()))?;
-                            let member_name = current_module.member_name(name.clone());
-                            env.new_global(&member_name);
-                            // TODO: move to StaticEnv
-                            env.module_members
-                                .entry(current_module)
-                                .or_insert_with(HashSet::new)
-                                .insert(name);
-                            let value = build_ast(&value, &env)?;
-                            let ast = match deftype {
-                                "__define" => TopAst::Define(member_name, value),
-                                "__defmacro" => TopAst::DefMacro(member_name, value),
-                                _ => unreachable!(),
-                            };
-                            Ok(ast)
-                        }
-                        _ => Err(EvalError::SymbolRequired),
-                    }
+                    let name = name
+                        .to_simple_name()
+                        .ok_or_else(|| EvalError::IllegalArgument(cdr.clone()))?;
+                    let current_module = env.current_module.clone().unwrap_or_else(AbsName::global);
+                    let member_name = current_module.member_name(name.clone());
+                    env.new_global(&member_name);
+                    // TODO: move to StaticEnv
+                    env.module_members
+                        .entry(current_module)
+                        .or_insert_with(HashSet::new)
+                        .insert(name);
+                    let value = build_ast(&value, &env)?;
+                    let ast = match deftype {
+                        "__define" => TopAst::Define(member_name, value),
+                        "__defmacro" => TopAst::DefMacro(member_name, value),
+                        _ => unreachable!(),
+                    };
+                    Ok(ast)
                 } else {
                     illegal_argument_error(cdr)
                 }
@@ -672,7 +664,6 @@ fn extract_rec_lambda_defs<'a, 'b, E: Fn() -> EvalError + Copy>(
         .into_iter()
         .map(|raw| extract_raw_lambda_def(raw).ok_or_else(err))
         .collect::<Result<Vec<_>, _>>()?;
-    // TODO: change extract_rec_lambda_defs signature to return SimpleName
     let env = env.rec_extended(defs.iter().map(|(name, ..)| name.clone()));
     let defs = defs
         .into_iter()

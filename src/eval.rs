@@ -409,7 +409,7 @@ mod test {
             2,
             3
         ]));
-        eval_str("(__define 1 2)", &mut env).should_error(EvalError::SymbolRequired);
+        eval_str("(__define 1 2)", &mut env).should_error(EvalError::IllegalArgument(list![1, 2]));
         eval_str("(__define x aaa)", &mut env)
             .should_error(EvalError::VariableNotFound("aaa".into()));
 
