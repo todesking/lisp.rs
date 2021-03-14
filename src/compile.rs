@@ -399,53 +399,13 @@ fn build_ast(expr: &Value, env: &StaticEnv) -> Result<Ast, EvalError> {
 
 fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast, EvalError> {
     match car {
-        Value::Sym(name) if &**name == "quote" => {
-            if let Some(x) = cdr.to_list1() {
-                Ok(Ast::Const(x))
-            } else {
-                illegal_argument_error(cdr.clone())
-            }
-        }
+        Value::Sym(name) if &**name == "quote" => build_ast_quote(cdr),
         Value::Sym(name) if &**name == "__define" => Err(EvalError::DefineInLocalContext),
-        Value::Sym(name) if &**name == "if" => {
-            if let Some((cond, th, el)) = cdr.to_list3() {
-                let cond = build_ast(&cond, env)?;
-                let th = build_ast(&th, env)?;
-                let el = build_ast(&el, env)?;
-                Ok(Ast::If(Box::new(cond), Box::new(th), Box::new(el)))
-            } else {
-                illegal_argument_error(cdr.clone())
-            }
-        }
-        Value::Sym(name) if &**name == "lambda" => match cdr.to_vec().as_deref() {
-            Some([params, bodies @ .., expr]) => {
-                let (param_names, rest_name) = params.collect_improper(|v| match v {
-                    Value::Sym(name) => {
-                        let name = SimpleName::parse(&**name)
-                            .ok_or_else(|| EvalError::IllegalArgument(cdr.clone()))?;
-                        Ok(name)
-                    }
-                    _ => Err(EvalError::SymbolRequired),
-                })?;
-                let body_env = env.extended(param_names.clone(), rest_name.clone());
-                let bodies = bodies
-                    .iter()
-                    .map(|v| build_ast(v, &body_env))
-                    .collect::<Result<Rc<[Ast]>, EvalError>>()?;
-                let expr = Rc::new(build_ast(expr, &body_env)?);
-                let depth = body_env.local_depth;
-                Ok(Ast::Lambda {
-                    param_names,
-                    rest_name,
-                    bodies,
-                    expr,
-                    depth,
-                })
-            }
-            _ => Err(EvalError::IllegalArgument(cdr.clone())),
-        },
-        Value::Sym(name) if &**name == "begin" => {
-            // expr-level begin
+        Value::Sym(name) if &**name == "if" => build_ast_if(cdr, env),
+        Value::Sym(name) if &**name == "lambda" => build_ast_lambda(cdr, env),
+        Value::Sym(name) if &**name == "begin" =>
+        // expr-level begin
+        {
             build_ast(&list![list!["lambda", list![]; cdr.clone()]], env)
         }
         Value::Sym(name) if &**name == "set-local!" => build_ast_set_local(cdr, true, env),
@@ -453,87 +413,148 @@ fn build_ast_from_cons(car: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast,
         Value::Sym(name) if &**name == "set-global!" => {
             build_ast_set_global(cdr, env).or_else(|err| Ok(Ast::Error(err)))
         }
-        Value::Sym(name) if &**name == "catch-error" => {
-            if let Some((handler, expr)) = cdr.to_list2() {
-                let handler = build_ast(&handler, env).map(Box::new)?;
-                let expr = build_ast(&expr, env).map(Box::new)?;
-                Ok(Ast::CatchError { handler, expr })
-            } else {
-                illegal_argument_error(cdr.clone())
-            }
-        }
-        Value::Sym(name) if &**name == "letrec" => {
-            let err = || EvalError::IllegalArgument(cdr.clone());
-            let (defs, body) = cdr.to_cons().ok_or_else(err)?;
-            let defs = defs.to_vec().ok_or_else(err)?;
-            let (env, defs) = extract_rec_lambda_defs(&defs, env, err)?;
-            let body = body.to_vec().ok_or_else(err)?;
-            let mut body = body
-                .iter()
-                .map(|b| build_ast(b, &env))
-                .collect::<Result<Vec<Ast>, EvalError>>()?;
-            let expr = body.pop().ok_or_else(err)?;
-            let expr = Box::new(expr);
-            let defs = defs.into_iter().map(|d| d.1).collect();
-            let rec_depth = env.rec_depth;
-            let local_depth = env.local_depth;
-            Ok(Ast::LetRec {
-                defs,
-                body,
-                expr,
-                rec_depth,
-                local_depth,
-            })
-        }
-        Value::Sym(name) if &**name == "quasiquote" => {
-            let value = cdr.to_list1().ok_or(EvalError::QuasiQuote)?;
-            let qq = build_quasiquote(&value, None, env)
-                .unwrap_or_else(|err| QuasiQuote::expr(Ast::Error(err)));
-            Ok(Ast::QuasiQuote(qq))
-        }
+        Value::Sym(name) if &**name == "catch-error" => build_ast_catch_error(cdr, env),
+        Value::Sym(name) if &**name == "letrec" => build_ast_letrec(cdr, env),
+        Value::Sym(name) if &**name == "quasiquote" => build_ast_quasiquote(cdr, env),
         Value::Sym(name) if &**name == "unquote" => Ok(Ast::Error(EvalError::QuasiQuote)),
         Value::Sym(name) if &**name == "unquote-splicing" => Ok(Ast::Error(EvalError::QuasiQuote)),
-        Value::Sym(name) if &**name == "if-match" => {
-            let (expr, th, el) = cdr
-                .to_list3()
-                .ok_or_else(|| EvalError::IllegalArgument(cdr.clone()))?;
-            let (pat, th) = th
-                .to_list2()
-                .ok_or_else(|| EvalError::IllegalArgument(th.clone()))?;
-            let expr = build_ast(&expr, env)?;
-            let mut capture_names = Vec::new();
-            let pat = build_pattern(&pat, &mut capture_names)?;
-            let capture_size = capture_names.len();
-            let th_env = env.extended(capture_names.clone(), None);
-            let th = build_ast(&th, &th_env)?;
-            let th = Ast::Lambda {
-                param_names: capture_names,
-                rest_name: None,
-                bodies: Rc::from(vec![]),
-                expr: Rc::new(th),
-                depth: th_env.local_depth,
-            };
-            let el = build_ast(&el, env)?;
-            Ok(Ast::IfMatch(
-                capture_size,
-                Box::new(expr),
-                pat,
-                Box::new(th),
-                Box::new(el),
-            ))
-        }
-        f => match cdr.to_vec() {
-            None => illegal_argument_error(cdr.clone()),
-            Some(args) => {
-                let f = build_ast(f, env)?;
-                let mut arg_values = Vec::with_capacity(args.len());
-                for arg in args.iter() {
-                    let arg = build_ast(arg, env)?;
-                    arg_values.push(arg);
+        Value::Sym(name) if &**name == "if-match" => build_ast_if_match(cdr, env),
+        f => build_ast_apply(f, cdr, env),
+    }
+}
+
+fn build_ast_quote(cdr: &Value) -> Result<Ast, EvalError> {
+    if let Some(x) = cdr.to_list1() {
+        Ok(Ast::Const(x))
+    } else {
+        illegal_argument_error(cdr.clone())
+    }
+}
+
+fn build_ast_if(cdr: &Value, env: &StaticEnv) -> Result<Ast, EvalError> {
+    if let Some((cond, th, el)) = cdr.to_list3() {
+        let cond = build_ast(&cond, env)?;
+        let th = build_ast(&th, env)?;
+        let el = build_ast(&el, env)?;
+        Ok(Ast::If(Box::new(cond), Box::new(th), Box::new(el)))
+    } else {
+        illegal_argument_error(cdr.clone())
+    }
+}
+
+fn build_ast_lambda(cdr: &Value, env: &StaticEnv) -> Result<Ast, EvalError> {
+    match cdr.to_vec().as_deref() {
+        Some([params, bodies @ .., expr]) => {
+            let (param_names, rest_name) = params.collect_improper(|v| match v {
+                Value::Sym(name) => {
+                    let name = SimpleName::parse(&**name)
+                        .ok_or_else(|| EvalError::IllegalArgument(cdr.clone()))?;
+                    Ok(name)
                 }
-                Ok(Ast::Apply(Box::new(f), arg_values))
+                _ => Err(EvalError::SymbolRequired),
+            })?;
+            let body_env = env.extended(param_names.clone(), rest_name.clone());
+            let bodies = bodies
+                .iter()
+                .map(|v| build_ast(v, &body_env))
+                .collect::<Result<Rc<[Ast]>, EvalError>>()?;
+            let expr = Rc::new(build_ast(expr, &body_env)?);
+            let depth = body_env.local_depth;
+            Ok(Ast::Lambda {
+                param_names,
+                rest_name,
+                bodies,
+                expr,
+                depth,
+            })
+        }
+        _ => Err(EvalError::IllegalArgument(cdr.clone())),
+    }
+}
+
+fn build_ast_catch_error(cdr: &Value, env: &StaticEnv) -> Result<Ast, EvalError> {
+    if let Some((handler, expr)) = cdr.to_list2() {
+        let handler = build_ast(&handler, env).map(Box::new)?;
+        let expr = build_ast(&expr, env).map(Box::new)?;
+        Ok(Ast::CatchError { handler, expr })
+    } else {
+        illegal_argument_error(cdr.clone())
+    }
+}
+
+fn build_ast_letrec(cdr: &Value, env: &StaticEnv) -> Result<Ast, EvalError> {
+    let err = || EvalError::IllegalArgument(cdr.clone());
+    let (defs, body) = cdr.to_cons().ok_or_else(err)?;
+    let defs = defs.to_vec().ok_or_else(err)?;
+    let (env, defs) = extract_rec_lambda_defs(&defs, env, err)?;
+    let body = body.to_vec().ok_or_else(err)?;
+    let mut body = body
+        .iter()
+        .map(|b| build_ast(b, &env))
+        .collect::<Result<Vec<Ast>, EvalError>>()?;
+    let expr = body.pop().ok_or_else(err)?;
+    let expr = Box::new(expr);
+    let defs = defs.into_iter().map(|d| d.1).collect();
+    let rec_depth = env.rec_depth;
+    let local_depth = env.local_depth;
+    Ok(Ast::LetRec {
+        defs,
+        body,
+        expr,
+        rec_depth,
+        local_depth,
+    })
+}
+
+fn build_ast_quasiquote(cdr: &Value, env: &StaticEnv) -> Result<Ast, EvalError> {
+    let value = cdr.to_list1().ok_or(EvalError::QuasiQuote)?;
+    let qq =
+        build_quasiquote(&value, None, env).unwrap_or_else(|err| QuasiQuote::expr(Ast::Error(err)));
+    Ok(Ast::QuasiQuote(qq))
+}
+
+fn build_ast_if_match(cdr: &Value, env: &StaticEnv) -> Result<Ast, EvalError> {
+    let (expr, th, el) = cdr
+        .to_list3()
+        .ok_or_else(|| EvalError::IllegalArgument(cdr.clone()))?;
+    let (pat, th) = th
+        .to_list2()
+        .ok_or_else(|| EvalError::IllegalArgument(th.clone()))?;
+    let expr = build_ast(&expr, env)?;
+    let mut capture_names = Vec::new();
+    let pat = build_pattern(&pat, &mut capture_names)?;
+    let capture_size = capture_names.len();
+    let th_env = env.extended(capture_names.clone(), None);
+    let th = build_ast(&th, &th_env)?;
+    let th = Ast::Lambda {
+        param_names: capture_names,
+        rest_name: None,
+        bodies: Rc::from(vec![]),
+        expr: Rc::new(th),
+        depth: th_env.local_depth,
+    };
+    let el = build_ast(&el, env)?;
+    Ok(Ast::IfMatch(
+        capture_size,
+        Box::new(expr),
+        pat,
+        Box::new(th),
+        Box::new(el),
+    ))
+}
+
+fn build_ast_apply(f: &Value, cdr: &Value, env: &StaticEnv) -> Result<Ast, EvalError> {
+    match cdr.to_vec() {
+        None => illegal_argument_error(cdr.clone()),
+        Some(args) => {
+            let f = build_ast(f, env)?;
+            let mut arg_values = Vec::with_capacity(args.len());
+            for arg in args.iter() {
+                let arg = build_ast(arg, env)?;
+                arg_values.push(arg);
             }
-        },
+            Ok(Ast::Apply(Box::new(f), arg_values))
+        }
     }
 }
 
