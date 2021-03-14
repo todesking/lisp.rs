@@ -9,6 +9,7 @@ mod local_env;
 mod name;
 mod parser;
 mod predef;
+mod static_env;
 
 pub use ast::TopAst;
 pub use compile::build_top_ast;

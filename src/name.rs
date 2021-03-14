@@ -180,3 +180,35 @@ impl Name {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_parse_name() {
+        assert_eq!(
+            Name::parse("foo"),
+            Some(Name::Single(SimpleName::parse_or_die("foo")))
+        );
+        assert_eq!(
+            Name::parse(":foo"),
+            Some(Name::Absolute(MemberName::parse(":foo").unwrap()))
+        );
+        assert_eq!(
+            Name::parse("foo:bar"),
+            Some(Name::Relative(
+                vec![SimpleName::parse_or_die("foo")],
+                SimpleName::parse_or_die("bar")
+            ))
+        );
+        assert_eq!(
+            Name::parse(":foo:bar:baz"),
+            Some(Name::Absolute(MemberName::parse_or_die(":foo:bar:baz")))
+        );
+        assert_eq!(Name::parse(""), None);
+        assert_eq!(Name::parse(":"), None);
+        assert_eq!(Name::parse(":foo:"), None);
+        assert_eq!(Name::parse(":foo::bar"), None);
+    }
+}
