@@ -18,14 +18,14 @@ use crate::TopAst;
 
 pub type EvalResult = Result<Value, EvalError>;
 
-pub fn eval<'v, 'g>(e: &Value, global: &mut impl GlobalWrite<'g>) -> EvalResult {
-    let ast = build_top_ast(e, global.as_ref())?;
+pub fn eval(e: &Value, global: &mut GlobalEnv) -> EvalResult {
+    let ast = build_top_ast(e, global)?;
     eval_top_ast(&ast, global)
 }
 
 type Args = Rc<RefCell<Vec<Value>>>;
 
-pub fn eval_top_ast<'v, 'g>(top: &'v TopAst, global: &mut impl GlobalWrite<'g>) -> EvalResult {
+pub fn eval_top_ast(top: &TopAst, global: &mut GlobalEnv) -> EvalResult {
     let args = Rc::new(RefCell::new(Vec::new()));
     match top {
         TopAst::Begin(asts) => {
@@ -39,20 +39,14 @@ pub fn eval_top_ast<'v, 'g>(top: &'v TopAst, global: &mut impl GlobalWrite<'g>) 
             global
                 .define_module_member(full_name.module_name.clone(), full_name.simple_name.clone())
                 .ok_or_else(|| EvalError::ReadOnly(full_name.to_string()))?;
-            global
-                .set(full_name.clone(), Value::nil())
-                .ok_or_else(|| EvalError::ReadOnly(full_name.to_string()))?;
+            global.set(full_name.clone(), Value::nil());
             let value = eval_local_loop(value, global, &None, &args)?;
-            global
-                .set(full_name.clone(), value)
-                .ok_or_else(|| EvalError::ReadOnly(full_name.to_string()))?;
+            global.set(full_name.clone(), value);
             Ok(Value::nil())
         }
         TopAst::DefMacro(full_name, value) => {
             let value = eval_local_loop(value, global, &None, &args)?;
-            global
-                .set_macro(full_name.clone(), value)
-                .ok_or_else(|| EvalError::ReadOnly(full_name.to_string()))?;
+            global.set_macro(full_name.clone(), value);
             global
                 .define_module_member(full_name.module_name.clone(), full_name.simple_name.clone());
             Ok(Value::nil())
@@ -73,8 +67,7 @@ pub fn eval_top_ast<'v, 'g>(top: &'v TopAst, global: &mut impl GlobalWrite<'g>) 
             .ok_or_else(|| EvalError::ReadOnly("import table".to_owned())),
         TopAst::Expr(value) => eval_local_loop(&value, global, &None, &args),
         TopAst::Delay(current_module, value) => {
-            let value =
-                build_top_ast_within_module(value, global.as_ref(), current_module.clone())?;
+            let value = build_top_ast_within_module(value, global, current_module.clone())?;
             eval_top_ast(&value, global)
         }
     }
@@ -335,7 +328,7 @@ mod test {
     use super::*;
     use crate::predef;
 
-    fn eval_str<'g>(s: &str, env: &mut impl GlobalWrite<'g>) -> EvalResult {
+    fn eval_str(s: &str, env: &mut GlobalEnv) -> EvalResult {
         let expr = s.parse::<Value>().expect("should valid sexpr");
         eval(&expr, env)
     }
