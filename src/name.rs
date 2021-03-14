@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct AbsName(Vec<SimpleName>);
 impl AbsName {
     pub fn new(parts: impl Into<Vec<SimpleName>>) -> AbsName {
@@ -69,9 +69,14 @@ impl std::fmt::Display for AbsName {
         Ok(())
     }
 }
+impl std::fmt::Debug for AbsName {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        std::fmt::Display::fmt(self, fmt)
+    }
+}
 
 // TODO: Use Rc<str>
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct SimpleName(String);
 impl SimpleName {
     pub unsafe fn new_unchecked<S: Into<String>>(s: S) -> SimpleName {
@@ -121,8 +126,13 @@ impl std::fmt::Display for SimpleName {
         Ok(())
     }
 }
+impl std::fmt::Debug for SimpleName {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        std::fmt::Display::fmt(self, fmt)
+    }
+}
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct MemberName {
     pub module_name: AbsName,
     pub simple_name: SimpleName,
@@ -153,6 +163,11 @@ impl std::fmt::Display for MemberName {
         self.module_name.fmt(fmt)?;
         fmt.write_char(':')?;
         self.simple_name.fmt(fmt)
+    }
+}
+impl std::fmt::Debug for MemberName {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        std::fmt::Display::fmt(self, fmt)
     }
 }
 
