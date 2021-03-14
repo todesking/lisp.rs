@@ -76,10 +76,10 @@ impl LocalEnv {
                 }
             }
         } else {
-            panic!(format!(
+            panic!(
                 "get: Local variable lookup failed: depth={}, index={}",
                 depth, index
-            ))
+            )
         }
     }
     pub fn set(env: &Option<Rc<LocalEnv>>, depth: usize, index: usize, value: Value) {
@@ -100,10 +100,10 @@ impl LocalEnv {
                 LocalEnv::Rec { parent, .. } => Self::set(parent, depth, index, value),
             }
         } else {
-            panic!(format!(
+            panic!(
                 "set: Local variable lookup failed: depth={}, index={}",
                 depth, index
-            ))
+            )
         }
     }
     pub fn get_rec(env: &Option<Rc<LocalEnv>>, rec_depth: usize, index: usize) -> Value {
@@ -133,10 +133,10 @@ impl LocalEnv {
                 LocalEnv::Local { parent, .. } => Self::get_rec(parent, target_depth, index),
             }
         } else {
-            panic!(format!(
+            panic!(
                 "get_rec: Local variable lookup failed: rec_depth={}, index={}",
                 rec_depth, index
-            ))
+            )
         }
     }
     pub fn rec_extended(
